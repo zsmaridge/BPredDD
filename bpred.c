@@ -73,7 +73,8 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
 	     unsigned int xor,  	/* history xor address flag */
 	     unsigned int btb_sets,	/* number of sets in BTB */ 
 	     unsigned int btb_assoc,	/* BTB associativity */
-	     unsigned int retstack_size) /* num entries in ret-addr stack */
+	     unsigned int retstack_size, /* num entries in ret-addr stack */
+		 /****ZS**** Add ALT data structures here*/)
 {
   struct bpred_t *pred;
 
@@ -112,6 +113,18 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
   case BPredNotTaken:
     /* no other state */
     break;
+
+  /*ZS* New case statement for DD and 2-bit */
+  case BPredComb:			
+    /* bimodal component */
+    pred->dirpred.bimod = 
+	 bpred_dir_create(BPred2bit, bimod_size, 0, 0, 0);
+
+	/* data dependence predictor */
+	pred->dirpred.twolev = 
+	 bpred_dir_create(BPredDD, shift_width, xor);
+
+	break;
 
   default:
     panic("bogus predictor class");
@@ -255,6 +268,11 @@ bpred_dir_create (
   case BPredNotTaken:
     /* no other state */
     break;
+	
+  /*ZS* Create data dependency predictor */
+  case BPredDD:
+  
+    break;
 
   default:
     panic("bogus branch direction predictor class");
@@ -290,6 +308,11 @@ bpred_dir_config(
   case BPredNotTaken:
     fprintf(stream, "pred_dir: %s: predict not taken\n", name);
     break;
+	
+  /*ZS* */
+  case BPredDD:
+    fprintf(stream, "pred_dir: Data dependence predictor along side 2-bit");
+	break;
 
   default:
     panic("bogus branch direction predictor class");

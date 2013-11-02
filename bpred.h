@@ -48,7 +48,6 @@
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
  */
 
-
 #ifndef BPRED_H
 #define BPRED_H
 
@@ -104,7 +103,8 @@ enum bpred_class {
   BPred2bit,			/* 2-bit saturating cntr pred (dir mapped) */
   BPredTaken,			/* static predict taken */
   BPredNotTaken,		/* static predict not taken */
-  BPredDD,              /* Data dependence predictor combined with 2-bit*/
+  BPredDD,              /*ZS* Data dependence predictor combined with 2-bit*/
+  BPredDDComb,			/*ZS* Combination of DD and 2-bit */
   BPred_NUM
 };
 
