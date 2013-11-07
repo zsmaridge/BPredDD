@@ -2,20 +2,20 @@
 
 /* SimpleScalar(TM) Tool Suite
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
- * All Rights Reserved. 
- * 
+ * All Rights Reserved.
+ *
  * THIS IS A LEGAL DOCUMENT, BY USING SIMPLESCALAR,
  * YOU ARE AGREEING TO THESE TERMS AND CONDITIONS.
- * 
+ *
  * No portion of this work may be used by any commercial entity, or for any
  * commercial purpose, without the prior, written permission of SimpleScalar,
  * LLC (info@simplescalar.com). Nonprofit and noncommercial use is permitted
  * as described below.
- * 
+ *
  * 1. SimpleScalar is provided AS IS, with no warranty of any kind, express
  * or implied. The user of the program accepts full responsibility for the
  * application of the program and the use of any results.
- * 
+ *
  * 2. Nonprofit and noncommercial use is encouraged. SimpleScalar may be
  * downloaded, compiled, executed, copied, and modified solely for nonprofit,
  * educational, noncommercial research, and noncommercial scholarship
@@ -24,13 +24,13 @@
  * solely for nonprofit, educational, noncommercial research, and
  * noncommercial scholarship purposes provided that this notice in its
  * entirety accompanies all copies.
- * 
+ *
  * 3. ALL COMMERCIAL USE, AND ALL USE BY FOR PROFIT ENTITIES, IS EXPRESSLY
  * PROHIBITED WITHOUT A LICENSE FROM SIMPLESCALAR, LLC (info@simplescalar.com).
- * 
+ *
  * 4. No nonprofit user may place any restrictions on the use of this software,
  * including as modified by the user, by any other authorized user.
- * 
+ *
  * 5. Noncommercial and nonprofit users may distribute copies of SimpleScalar
  * in compiled or executable form as set forth in Section 2, provided that
  * either: (A) it is accompanied by the corresponding machine-readable source
@@ -40,13 +40,14 @@
  * must permit verbatim duplication by anyone, or (C) it is distributed by
  * someone who received only the executable form, and is accompanied by a
  * copy of the written offer of source code.
- * 
+ *
  * 6. SimpleScalar was developed by Todd M. Austin, Ph.D. The tool suite is
  * currently maintained by SimpleScalar LLC (info@simplescalar.com). US Mail:
  * 2395 Timbercrest Court, Ann Arbor, MI 48105.
- * 
+ *
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
  */
+
 
 #ifndef BPRED_H
 #define BPRED_H
@@ -103,9 +104,9 @@ enum bpred_class {
   BPred2bit,			/* 2-bit saturating cntr pred (dir mapped) */
   BPredTaken,			/* static predict taken */
   BPredNotTaken,		/* static predict not taken */
-  BPredDD,              /*ZS* Data dependence predictor combined with 2-bit*/
-  BPredDDComb,			/*ZS* Combination of DD and 2-bit */
-  BPred_NUM
+  BPred_NUM,
+  BPredJunk, /* test class */
+  BPredDD
 };
 
 /* an entry in a BTB */
@@ -114,6 +115,14 @@ struct bpred_btb_ent_t {
   enum md_opcode op;		/* opcode of branch corresp. to addr */
   md_addr_t target;		/* last destination of branch when taken */
   struct bpred_btb_ent_t *prev, *next; /* lru chaining pointers */
+};
+
+/* Address lookup table */
+struct alt_t{
+  md_addr_t target; /* target address */
+  md_addr_t branch; /* branch address */
+  long int depend; /* data dependence */
+  unsigned int *shadowregs; /* shadow registers */
 };
 
 /* direction predictor def */
@@ -132,6 +141,12 @@ struct bpred_dir_t {
       int *shiftregs;		/* level-1 history table */
       unsigned char *l2table;	/* level-2 prediction state table */
     } two;
+    struct {
+      int l1size;
+      long int source;
+      long int target;
+      alt_t *table;
+    } ddep
   } config;
 };
 
@@ -196,7 +211,7 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
 	     unsigned int meta_size,	/* meta predictor table size */
 	     unsigned int shift_width,	/* history register width */
 	     unsigned int xor,		/* history xor address flag */
-	     unsigned int btb_sets,	/* number of sets in BTB */ 
+	     unsigned int btb_sets,	/* number of sets in BTB */
 	     unsigned int btb_assoc,	/* BTB associativity */
 	     unsigned int retstack_size);/* num entries in ret-addr stack */
 
@@ -232,7 +247,7 @@ void bpred_after_priming(struct bpred_t *bpred);
    static predictors), and OP is the instruction opcode (used to simulate
    predecode bits; a pointer to the predictor state entry (or null for jumps)
    is returned in *DIR_UPDATE_PTR (used for updating predictor state),
-   and the non-speculative top-of-stack is returned in stack_recover_idx 
+   and the non-speculative top-of-stack is returned in stack_recover_idx
    (used for recovering ret-addr stack after mis-predict).  */
 md_addr_t				/* predicted branch target addr */
 bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
@@ -258,9 +273,9 @@ bpred_recover(struct bpred_t *pred,	/* branch predictor instance */
 /* update the branch predictor, only useful for stateful predictors; updates
    entry for instruction type OP at address BADDR.  BTB only gets updated
    for branches which are taken.  Inst was determined to jump to
-   address BTARGET and was taken if TAKEN is non-zero.  Predictor 
-   statistics are updated with result of prediction, indicated by CORRECT and 
-   PRED_TAKEN, predictor state to be updated is indicated by *DIR_UPDATE_PTR 
+   address BTARGET and was taken if TAKEN is non-zero.  Predictor
+   statistics are updated with result of prediction, indicated by CORRECT and
+   PRED_TAKEN, predictor state to be updated is indicated by *DIR_UPDATE_PTR
    (may be NULL for jumps, which shouldn't modify state bits).  Note if
    bpred_update is done speculatively, branch-prediction may get polluted. */
 void
