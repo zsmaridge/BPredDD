@@ -58,6 +58,7 @@
 #include "misc.h"
 #include "machine.h"
 #include "bpred.h"
+#include "regs.h"
 
 /* turn this on to enable the SimpleScalar 2.0 RAS bug */
 /* #define RAS_BUG_COMPATIBLE */
@@ -273,6 +274,7 @@ bpred_dir_create (
     /* TODO: Setup Source-Target Register */
     pred_dir->config.ddep.l1size = l1size;
     pred_dir->config.ddep.source = 0;
+    pred_dir->config.ddep.l1count = 0;
     pred_dir->config.ddep.target = -1; /* setting all bits to 1 */
 
     /* TODO: Allocate space for ALT */
@@ -609,23 +611,13 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
     case BPredDD:   /*BZ*/
       // Compare registers against shadow registers
       // Which table are we checking against? Need to determine what branch were looking at.
-      for(iTab=0; iTab<1; iTab++){                                  // Iterate through table      /*****TODO*****/
-        if(baddr == pred_dir->config.ddep.table[iTab].branch){        // Is this the correct branch
-          for(iReg=0; iReg<32; iReg++){                             // Iterate through shadow registers
-            if(pred_dir->config.ddep.table[iTab].shadowregs[iReg] != regs.regs_R[iReg]){
-              differ++;
-            }
-          }
+      for(iTab=0; iTab<pred_dir->config.ddep.l1size; iTab++){       // Iterate through table
+        if(baddr == pred_dir->config.ddep.table[iTab].branch){      // Is this the correct branch
+          p = &pred_dir->config.ddep.table[iTab].target;
+          break;
         }
       }
-      if(differ == 0){  // Use data dependency predictor
-
-      }
-      else{             // Revert to 2-bit prediction
-        p = &pred_dir->config.bimod.table[BIMOD_HASH(pred_dir, baddr)];
-      }
       break;
-
     default:
       panic("bogus branch direction predictor class");
     }
@@ -705,27 +697,6 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
           bpred_dir_lookup (pred->dirpred.bimod, baddr);
       }
       break;
-    case BPredDD:
-      /*BZ* Check if branch address in alt */
-      /* Cant access structures
-      for(cnt=0;cnt < pred->dirpred.ddep.l1size;cnt++)
-      {
-        if(baddr==pred->dirpred.ddep.table[cnt].branch &&
-           (pred->dirpred.ddep.source & pred_dir->dirpred.ddep.target ==
-            pred->dirpred.ddep.table[cnt].depend))
-        {
-          dir_update_ptr->pdir1 =
-            bpred_dir_lookup (pred->dirpred.ddep, baddr);
-        }
-        else    //use 2 bit
-        {
-          dir_update_ptr->pdir1 =
-            bpred_dir_lookup (pred->dirpred.bimod, baddr);
-        }
-      }*/
-      //if == -> return target address
-      //else -> use 2-bit
-    break;
 
     case BPredTaken:
     case BPredJunk:
@@ -828,6 +799,54 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
     }
 }
 
+/*BZ*/
+md_addr_t				/* predicted branch target addr */
+bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
+	     struct regs_t regs,		/* register file */
+	     md_addr_t btarget,		/* branch target if taken */
+	     enum md_opcode op,		/* opcode of instruction */
+	     int is_call,		/* non-zero if inst is fn call */
+	     int is_return,		/* non-zero if inst is fn return */
+	     struct bpred_update_t *dir_update_ptr, /* pred state pointer */
+	     int *stack_recover_idx)	/* Non-speculative top-of-stack; */
+{
+  int cnt, iReg;
+  int iDiff = 1;
+  md_addr_t baddr = regs.regs_PC;
+  for(cnt=0;cnt < pred->dirpred.ddep->config.ddep.l1size;cnt++)
+  {
+    if(baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch &&
+       (pred->dirpred.ddep->config.ddep.source &
+        pred->dirpred.ddep->config.ddep.target ==
+        pred->dirpred.ddep->config.ddep.table[cnt].depend))
+    {
+      iDiff = 0;
+      for(iReg=0; iReg<32; iReg++)
+      {
+        if((1<<iReg) == (1<<iReg)&(pred->dirpred.ddep->config.ddep.table[cnt].depend))
+        {
+          if(pred->dirpred.ddep->config.ddep.table[cnt].shadowregs[iReg]!=
+             regs.regs_R[iReg])
+          {
+               iDiff=1;
+               break; //does not match, abort
+          }
+        }
+      }
+    }
+  }
+  if(iDiff==0)
+  {
+    dir_update_ptr->pdir1 =
+      bpred_dir_lookup (pred->dirpred.ddep, baddr);
+  }
+  else    //use 2 bit
+  {
+    dir_update_ptr->pdir1 =
+      bpred_dir_lookup (pred->dirpred.bimod, baddr);
+  }
+}
+
 /* Speculative execution can corrupt the ret-addr stack.  So for each
  * lookup we return the top-of-stack (TOS) at that point; a mispredicted
  * branch, as part of its recovery, restores the TOS using this value --
@@ -917,7 +936,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   }
 
   /* Can exit now if this is a stateless predictor */
-  if (pred->class == BPredNotTaken || pred->class == BPredTaken || pred->class == BPredJunk)
+  if (pred->class == BPredNotTaken || pred->class == BPredTaken || pred->class == BPredJunk || pred->class == BPredDD)
     return;
 
   /*
@@ -1094,6 +1113,28 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
       pbtb->target = btarget;
     }
   }
+}
+void
+bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
+	     struct regs_t regs,		/* branch address */
+	     md_addr_t btarget,		/* resolved branch target */
+	     int taken,			/* non-zero if branch was taken */
+	     int pred_taken,		/* non-zero if branch was pred taken */
+	     int correct,		/* was earlier addr prediction ok? */
+	     enum md_opcode op,		/* opcode of instruction */
+	     struct bpred_update_t *dir_update_ptr)/* pred state pointer */
+{
+  int cnt, iReg;
+  int iEntry = pred->dirpred.ddep->config.ddep.l1count;
+  int bFound = 0;
+  long int depend = pred->dirpred.ddep->config.ddep.source &
+    pred->dirpred.ddep->config.ddep.target;
+
+  /* Update counters */
+  md_addr_t baddr = regs.regs_PC;
+  bpred_update(pred, baddr, btarget,
+               taken, pred_taken,	correct,
+               op, dir_update_ptr);
 
   /*BZ* Update data dependency predictor */
   // Check if branch is in table
@@ -1106,25 +1147,44 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
         pred->dirpred.ddep->config.ddep.target ==
         pred->dirpred.ddep->config.ddep.table[cnt].depend))
     {
-      dir_update_ptr->pdir1 =
-        bpred_dir_lookup (pred->dirpred.ddep, baddr);
-    }
-    else    //use 2 bit
-    {
-      dir_update_ptr->pdir1 =
-        bpred_dir_lookup (pred->dirpred.bimod, baddr);
+      //Found
+      pred->dirpred.ddep->config.ddep.source = 0;
+      pred->dirpred.ddep->config.ddep.target = -1;
+      return;
     }
   }
-  // if yes then update
-  // else find LRU spot and replace
-}
+  //Not Found
+  pred->dirpred.ddep->config.ddep.table[iEntry].branch = baddr;
+  pred->dirpred.ddep->config.ddep.table[iEntry].depend = depend;
 
+  //Store target address
+  pred->dirpred.ddep->config.ddep.table[iEntry].target = btarget;
+
+  //Store shadow registers
+  for(iReg=0; iReg<32; iReg++)
+  {
+    if((1<<iReg) == (1<<iReg)&(depend))
+    {
+      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=regs.regs_R[iReg];
+    }
+    else
+    {
+      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=0;
+    }
+  }
+
+  pred->dirpred.ddep->config.ddep.l1count++;
+  if(++iEntry==pred->dirpred.ddep->config.ddep.l1size)
+    pred->dirpred.ddep->config.ddep.l1count = 0;
+
+
+}
 /*BZ*/
 /* update the bpred data dependence */
 /* we assume that the instruction and register dependencies
    would be passed directly */
 void
-bpreddd_update(struct bpred_t *pred, word_t inst)
+bpreddd_str_update(struct bpred_t *pred, word_t inst)
 {
   enum md_opcode op;
   int regA, regB, regC;

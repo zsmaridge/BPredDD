@@ -2,20 +2,20 @@
 
 /* SimpleScalar(TM) Tool Suite
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
- * All Rights Reserved. 
- * 
+ * All Rights Reserved.
+ *
  * THIS IS A LEGAL DOCUMENT, BY USING SIMPLESCALAR,
  * YOU ARE AGREEING TO THESE TERMS AND CONDITIONS.
- * 
+ *
  * No portion of this work may be used by any commercial entity, or for any
  * commercial purpose, without the prior, written permission of SimpleScalar,
  * LLC (info@simplescalar.com). Nonprofit and noncommercial use is permitted
  * as described below.
- * 
+ *
  * 1. SimpleScalar is provided AS IS, with no warranty of any kind, express
  * or implied. The user of the program accepts full responsibility for the
  * application of the program and the use of any results.
- * 
+ *
  * 2. Nonprofit and noncommercial use is encouraged. SimpleScalar may be
  * downloaded, compiled, executed, copied, and modified solely for nonprofit,
  * educational, noncommercial research, and noncommercial scholarship
@@ -24,13 +24,13 @@
  * solely for nonprofit, educational, noncommercial research, and
  * noncommercial scholarship purposes provided that this notice in its
  * entirety accompanies all copies.
- * 
+ *
  * 3. ALL COMMERCIAL USE, AND ALL USE BY FOR PROFIT ENTITIES, IS EXPRESSLY
  * PROHIBITED WITHOUT A LICENSE FROM SIMPLESCALAR, LLC (info@simplescalar.com).
- * 
+ *
  * 4. No nonprofit user may place any restrictions on the use of this software,
  * including as modified by the user, by any other authorized user.
- * 
+ *
  * 5. Noncommercial and nonprofit users may distribute copies of SimpleScalar
  * in compiled or executable form as set forth in Section 2, provided that
  * either: (A) it is accompanied by the corresponding machine-readable source
@@ -40,11 +40,11 @@
  * must permit verbatim duplication by anyone, or (C) it is distributed by
  * someone who received only the executable form, and is accompanied by a
  * copy of the written offer of source code.
- * 
+ *
  * 6. SimpleScalar was developed by Todd M. Austin, Ph.D. The tool suite is
  * currently maintained by SimpleScalar LLC (info@simplescalar.com). US Mail:
  * 2395 Timbercrest Court, Ann Arbor, MI 48105.
- * 
+ *
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
  */
 
@@ -65,8 +65,6 @@
 #include "stats.h"
 #include "bpred.h"
 #include "sim.h"
-/****ZS****/
-#include "decode.def" //Needed for register macros
 
 /*
  * This file implements a branch predictor analyzer.
@@ -103,7 +101,7 @@ static int comb_config[1] =
 static int ras_size = 8;
 
 /* BTB predictor config (<num_sets> <associativity>) */
-static int btb_nelt = 2;pred
+static int btb_nelt = 2;
 static int btb_config[2] =
   { /* nsets */512, /* assoc */4 };
 
@@ -116,31 +114,11 @@ static counter_t sim_num_refs = 0;
 /* total number of branches executed */
 static counter_t sim_num_branches = 0;
 
-/****ZS****/
-/* Source and target registers for each instruction */
-int r_out[2];    
-int r_in[3];
-/* Instruction opcode used to ignore loads and identify branches */
-int opcode;
-/* Source Target Regsiters
-    Source | default 0 | 
-    Taget  | default 1 | */
-int STR[2][64];
-/* Adress Lookup Table Size */
-#define ALTsize 5
-/* Address Lookup Table */
-struct ALT{
-  int branchAddr;
-  int targetAddr;
-  int dependence;
-  int shadowReg[64];
-};
-
 /* register simulator-specific options */
 void
 sim_reg_options(struct opt_odb_t *odb)
 {
-  opt_reg_header(odb, 
+  opt_reg_header(odb,
 "sim-bpred: This simulator implements a branch predictor analyzer.\n"
 		 );
 
@@ -277,11 +255,24 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
 			  /* btb assoc */btb_config[1],
 			  /* ret-addr stack size */ras_size);
     }
-/****ZS****/
-/* Must initialize our predictor and 2-bit sort of like combining predictor */
-  else if(!mystricmp(pred_type, "dep"))
+    else if (!mystricmp(pred_type, "ddep"))   /*ZS*/
     {
+      if (bimod_nelt != 1)
+        fatal("bad bimod predictor config (<table_size>)");
+      if (btb_nelt != 2)
+        fatal("bad btb config (<num_sets> <associativity>)");
 
+      /* static predictor, taken */
+      pred = bpred_create(BPredDD,
+			  /* bimod table size */bimod_config[0],
+			  /* 2lev l1 size */twolev_config[0],          // Size of ALT
+			  /* 2lev l2 size */0,
+			  /* meta table size */0,
+			  /* history reg size */0,
+			  /* history xor address */0,
+			  /* btb sets */btb_config[0],
+			  /* btb assoc */btb_config[1],
+			  /* ret-addr stack size */ras_size);
     }
   else
     fatal("cannot parse predictor type `%s'", pred_type);
@@ -328,19 +319,6 @@ sim_init(void)
   /* allocate and initialize memory space */
   mem = mem_create("mem");
   mem_init(mem);
-
-  /****ZS****/
-  reset_STR();
-  /* Declare ALT structure and intialize */
-  struct ALT ALT[ALTsize];
-  for(int i=0; i<ALTsize; i++){
-    ALT[i].branchAddr = 0;
-    ALT[i].targetAddr = 0;
-    ALT[i].dependence = 0;
-    for(int j=0; j<64; j++){
-      ALT[i].shadowReg[j] = 0;
-    }
-  }
 }
 
 /* local machine state accessor */
@@ -391,48 +369,6 @@ sim_uninit(void)
   /* nada */
 }
 
-/****ZS****/
-/* Check if branch instruction (might not be needed, check instruction flagsl)*/
-bool is_branch(md_opcode OP)
-{
-  if(OP==BEQ || OP==BNE || OP==BLEZ || OP==BGTZ || OP==BLTZ || OP==BGEZ || 
-    OP==BC1F || OP==BC1T){
-      return TRUE;
-  }
-  else{
-    return FALSE;
-  }
-}
-
-/* Check if load instruction (might not be needed)*/
-bool is_load(md_opcode OP)
-{
-  if(OP==LB || OP==LBU || OP==LH || OP==LHU || OP==LW || OP==DLW || OP==L_S ||
-    OP==L_D || OP==LWL || OP==LWR || OP==LWL || OP++LWR){
-      return TRUE;
-  }
-  else{
-    return FALSE;
-  }
-}
-
-/* Reset/initiaize STR */
-void reset_STR(void)
-{
-  for(int i=0; i<64; i++){  
-    STR[0][i] = 0;
-    STR[1][i] = 1;
-  }
-}
-
-/* Save STR */
-void save_STR(void){
-  int dependecies[64];
-  for(int i=0; i<64; i++){  
-    dependencies[i] = STR[0][i] & STR[1][i];
-  }
-  //store dependecies into ALT
-}
 
 /*
  * configure the execution engine
@@ -528,6 +464,9 @@ sim_main(void)
   register int is_write;
   int stack_idx;
   enum md_fault_type fault;
+  /****ZS****/
+  //int i, j=0;
+  //int fl=0, nfl=0;
 
   fprintf(stderr, "sim: ** starting functional simulation w/ predictors **\n");
 
@@ -562,41 +501,62 @@ sim_main(void)
       /* decode the instruction */
       MD_SET_OPCODE(op, inst);
 
+      /*BZ* Update STR table */
+      if(pred->class==BPredDD) bpreddd_str_update(pred, inst);
+
+      /****ZS**** Test code */
+      /*j++;
+      if(MD_OP_FLAGS(op) & F_FCOMP){ fl++; }
+      else{  nfl++;  }
+      if(j == 5000){
+        printf("Total FP: %d\n", fl);
+        printf("Total nonFP: %d\n", nfl);
+      }
+
+      if(MD_OP_FLAGS(op) & F_COND){ //saveSTR(); resetSTR();
+      }
+      else if(!(MD_OP_FLAGS(op) & F_LOAD)){
+        printf("\nSources:%d(%#x) %d(%#x) %d\n",(int)RA,GPR(RA), (int)RB, GPR(RB), (int)RC);
+        //printf("Instruction: %#x\n", inst);
+        STR[0][(int)RA] = 1; STR[0][(int)RB] = 1; STR[0][(int)RC] = 1;
+        //STR[1][O1] = 0; STR[1][O2] = 0;
+      }
+      printf("Branch: %s\n", op);
+      printf("STR: S\tT\n");
+      for(i=0; i<64; i++)
+      {
+        printf("\t%d\t%d\n", STR[0][i], STR[1][i]);
+      }*/
+
       /* execute the instruction */
       switch (op)
 	{
-/****ZS****/
 #define DEFINST(OP,MSK,NAME,OPFORM,RES,FLAGS,O1,O2,I1,I2,I3)		\
-	case OP:							                            \
-          if(MD_OP_FLAGS(op) & FPCOND){ saveSTR(); resetSTR(); }    \
-          else if(!(MD_OP_FLAGS(op) & F_LOAD)){                     \
-            STR[0][I1] = 1; STR[0][I2] = 1; STR[0][I3] = 1;         \
-            STR[1][O1] = 0; STR[1][O2] = 0;                         \
-          }                                                         \
-          SYMCAT(OP,_IMPL);						                    \
-          break;
-#define DEFLINK(OP,MSK,NAME,MASK,SHIFT)					    \
-        case OP:							                \
+	case OP:							\
+        SYMCAT(OP,_IMPL);						\
+        break;
+#define DEFLINK(OP,MSK,NAME,MASK,SHIFT)					\
+        case OP:							\
           panic("attempted to execute a linking opcode");
 #define CONNECT(OP)
-#define DECLARE_FAULT(FAULT)						    \
+#define DECLARE_FAULT(FAULT)						\
 	  { fault = (FAULT); break; }
 #include "machine.def"
 	default:
 	  panic("attempted to execute a bogus opcode");
       }
 
-      if (fault != md_fault_none)
+  if (fault != md_fault_none)
 	fatal("fault (%d) detected @ 0x%08p", fault, regs.regs_PC);
 
-      if (MD_OP_FLAGS(op) & F_MEM)
+  if (MD_OP_FLAGS(op) & F_MEM)
 	{
 	  sim_num_refs++;
 	  if (MD_OP_FLAGS(op) & F_STORE)
 	    is_write = TRUE;
 	}
 
-      if (MD_OP_FLAGS(op) & F_CTRL)
+  if (MD_OP_FLAGS(op) & F_CTRL)
 	{
 	  md_addr_t pred_PC;
 	  struct bpred_update_t update_rec;
@@ -604,35 +564,61 @@ sim_main(void)
 	  sim_num_branches++;
 
 	  if (pred)
-	    {
-	      /* get the next predicted fetch address */
-	      pred_PC = bpred_lookup(pred,
-				     /* branch addr */regs.regs_PC,
-				     /* target */target_PC,
-				     /* inst opcode */op,
-				     /* call? */MD_IS_CALL(op),
-				     /* return? */MD_IS_RETURN(op),
-				     /* stash an update ptr */&update_rec,
-				     /* stash return stack ptr */&stack_idx);
+    {
+      /* check class of bpred, use different bred_lookup */
+      if(pred->class == BPredDD){
+        pred_PC = bpreddd_lookup(pred,
+             /* register file */regs,
+             /* target */target_PC,
+             /* inst opcode */op,
+             /* call? */MD_IS_CALL(op),
+             /* return? */MD_IS_RETURN(op),
+             /* stash an update ptr */&update_rec,
+             /* stash return stack ptr */&stack_idx);
+      } else {
+        /* get the next predicted fetch address */
+        pred_PC = bpred_lookup(pred,
+             /* branch addr */regs.regs_PC,
+             /* target */target_PC,
+             /* inst opcode */op,
+             /* call? */MD_IS_CALL(op),
+             /* return? */MD_IS_RETURN(op),
+             /* stash an update ptr */&update_rec,
+             /* stash return stack ptr */&stack_idx);
+      }
 
-	      /* valid address returned from branch predictor? */
-	      if (!pred_PC)
-		{
-		  /* no predicted taken target, attempt not taken target */
-		  pred_PC = regs.regs_PC + sizeof(md_inst_t);
-		}
+      /* valid address returned from branch predictor? */
+      if (!pred_PC)
+      {
+        /* no predicted taken target, attempt not taken target */
+        pred_PC = regs.regs_PC + sizeof(md_inst_t);
+      }
 
-	      bpred_update(pred,
-			   /* branch addr */regs.regs_PC,
-			   /* resolved branch target */regs.regs_NPC,
-			   /* taken? */regs.regs_NPC != (regs.regs_PC +
-							 sizeof(md_inst_t)),
-			   /* pred taken? */pred_PC != (regs.regs_PC +
-							sizeof(md_inst_t)),
-			   /* correct pred? */pred_PC == regs.regs_NPC,
-			   /* opcode */op,
-			   /* predictor update pointer */&update_rec);
-	    }
+      if(pred->class==BPredDD){
+        bpreddd_update(pred,
+         /* register file */regs,
+         /* resolved branch target */regs.regs_NPC,
+         /* taken? */regs.regs_NPC != (regs.regs_PC +
+               sizeof(md_inst_t)),
+         /* pred taken? */pred_PC != (regs.regs_PC +
+              sizeof(md_inst_t)),
+         /* correct pred? */pred_PC == regs.regs_NPC,
+         /* opcode */op,
+         /* predictor update pointer */&update_rec);
+      } else {
+        bpred_update(pred,
+         /* branch addr */regs.regs_PC,
+         /* resolved branch target */regs.regs_NPC,
+         /* taken? */regs.regs_NPC != (regs.regs_PC +
+               sizeof(md_inst_t)),
+         /* pred taken? */pred_PC != (regs.regs_PC +
+              sizeof(md_inst_t)),
+         /* correct pred? */pred_PC == regs.regs_NPC,
+         /* opcode */op,
+         /* predictor update pointer */&update_rec);
+
+      }
+    }
 	}
 
       /* check for DLite debugger entry condition */

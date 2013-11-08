@@ -60,6 +60,7 @@
 #include "misc.h"
 #include "machine.h"
 #include "stats.h"
+#include "regs.h"
 
 /*
  * This module implements a number of branch predictor mechanisms.  The
@@ -121,7 +122,6 @@ struct bpred_btb_ent_t {
 struct alt_t {
   md_addr_t target; /* target address */
   md_addr_t branch; /* branch address */
-  int tag;          /* tag 1-used, 0-unused */
   long int depend; /* data dependence */
   unsigned int *shadowregs; /* shadow registers */
 };
@@ -144,6 +144,7 @@ struct bpred_dir_t {
     } two;
     struct {          /*BZ*/
       int l1size;
+      int l1count;
       long int source;
       long int target;
       struct alt_t *table;
@@ -253,7 +254,18 @@ void bpred_after_priming(struct bpred_t *bpred);
    (used for recovering ret-addr stack after mis-predict).  */
 md_addr_t				/* predicted branch target addr */
 bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
-	     md_addr_t baddr,		/* branch address */
+	     md_addr_t baddr,		/* register file */
+	     md_addr_t btarget,		/* branch target if taken */
+	     enum md_opcode op,		/* opcode of instruction */
+	     int is_call,		/* non-zero if inst is fn call */
+	     int is_return,		/* non-zero if inst is fn return */
+	     struct bpred_update_t *dir_update_ptr, /* pred state pointer */
+	     int *stack_recover_idx);	/* Non-speculative top-of-stack;
+					 * used on mispredict recovery */
+
+md_addr_t				/* predicted branch target addr */
+bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
+	     struct regs_t regs,		/* register file */
 	     md_addr_t btarget,		/* branch target if taken */
 	     enum md_opcode op,		/* opcode of instruction */
 	     int is_call,		/* non-zero if inst is fn call */
@@ -290,7 +302,17 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	     enum md_opcode op,		/* opcode of instruction */
 	     struct bpred_update_t *dir_update_ptr); /* pred state pointer */
 
-
+void
+bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
+	     struct regs_t regs,		/* branch address */
+	     md_addr_t btarget,		/* resolved branch target */
+	     int taken,			/* non-zero if branch was taken */
+	     int pred_taken,		/* non-zero if branch was pred taken */
+	     int correct,		/* was earlier prediction correct? */
+	     enum md_opcode op,		/* opcode of instruction */
+	     struct bpred_update_t *dir_update_ptr); /* pred state pointer */
+void
+bpreddd_str_update(struct bpred_t *pred, word_t inst);
 #ifdef foo0
 /* OBSOLETE */
 /* dump branch predictor state (for debug) */
