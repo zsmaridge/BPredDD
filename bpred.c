@@ -473,7 +473,17 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
   if (pred->class == BPredDD)
   {
       sprintf(buf, "%s.used_ddep", name);
-      stat_reg_counter(sdb, buf, "total number of uses", &pred->used_ddep, 0, NULL);
+      stat_reg_counter(sdb, buf, "total number of ddep predictions used",
+        &pred->used_ddep, 0, NULL);
+      sprintf(buf, "%s.used_bimod", name);
+      stat_reg_counter(sdb, buf, "total number of bimodal predictions used",
+        &pred->used_bimod, 0, NULL);
+      sprintf(buf, "%s.ddep_hits", name);
+      stat_reg_counter(sdb, buf, "total number of ddep hits",
+        &pred->ddep_hits, 0, NULL  );
+      sprintf(buf, "%s.bimod_hits", name);
+      stat_reg_counter(sdb, buf, "total number of bimodal hits",
+        &pred->bimod_hits, 0, NULL);
   }
   sprintf(buf, "%s.misses", name);
   stat_reg_counter(sdb, buf, "total number of misses", &pred->misses, 0, NULL);
@@ -555,6 +565,8 @@ bpred_after_priming(struct bpred_t *bpred)
   bpred->retstack_pushes = 0;
   bpred->ras_hits = 0;
   bpred->used_ddep = 0;
+  bpred->ddep_hits = 0;
+  bpred->bimod_hits = 0;
 }
 
 #define BIMOD_HASH(PRED, ADDR)						\
@@ -865,11 +877,14 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
   }
   if(iDiff==0)
   {
-    pred->used_ddep++;
+    //pred->used_ddep++;
+    pred->last_used = BPredDD;
     return btarget;
   }
   else    //use 2 bit
   {
+    //pred->used_bimod++;
+    pred->last_used = BPred2bit;
     dir_update_ptr->pdir1 =
       bpred_dir_lookup (pred->dirpred.bimod, baddr);
     return((*(dir_update_ptr->pdir1) >= 2)
@@ -925,15 +940,25 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 
   /* Have a branch here */
 
-  if (correct)
+  if (correct){
     pred->addr_hits++;
+    if(pred->last_used == BPredDD){
+      pred->ddep_hits++;
+    }
+    else{
+      pred->bimod_hits++;
+    }
+  }
 
   if (!!pred_taken == !!taken)
     pred->dir_hits++;
   else
     pred->misses++;
 
-  if (dir_update_ptr->dir.ras)
+  if(pred->last_used == BPredDD){
+    pred->used_ddep++;
+  }
+  else if (dir_update_ptr->dir.ras)
   {
     pred->used_ras++;
     if (correct)

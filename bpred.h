@@ -155,6 +155,7 @@ struct bpred_dir_t {
 /* branch predictor def */
 struct bpred_t {
   enum bpred_class class;	/* type of predictor */
+  enum bpred_class last_used;
   struct {
     struct bpred_dir_t *bimod;	  /* first direction predictor */
     struct bpred_dir_t *twolev;	  /* second direction predictor */
@@ -186,6 +187,8 @@ struct bpred_t {
   counter_t jr_non_ras_seen;	/* num non-RAS JR's seen */
   counter_t misses;		/* num incorrect predictions */
   counter_t used_ddep; /* num data dependent predictions used (BPredDD) */
+  counter_t ddep_hits;  /* num of hits for data depedent preditcotr */
+  counter_t bimod_hits; /* num of hits for 2-bit predictor */
 
   counter_t lookups;		/* num lookups */
   counter_t retstack_pops;	/* number of times a value was popped */

@@ -1,1 +1,1 @@
-target-pisa/syscall.c
+target-alpha/syscall.c

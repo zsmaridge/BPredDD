@@ -90,7 +90,7 @@ static int bimod_config[1] =
 /* 2-level predictor config (<l1size> <l2size> <hist_size> <xor>) */
 static int twolev_nelt = 4;
 static int twolev_config[4] =
-  { /* l1size */1, /* l2size */1024, /* hist */8, /* xor */FALSE};
+  { /* l1size */100, /* l2size */1024, /* hist */8, /* xor */FALSE};
 
 /* combining predictor config (<meta_table_size> */
 static int comb_nelt = 1;
@@ -505,6 +505,7 @@ sim_main(void)
       if(pred->class==BPredDD) bpreddd_str_update(pred, inst);
 
       /****ZS**** Test code */
+      //fprintf(stderr, "\n\nTest Print\n\n");
       /*j++;
       if(MD_OP_FLAGS(op) & F_FCOMP){ fl++; }
       else{  nfl++;  }
@@ -530,7 +531,7 @@ sim_main(void)
 
       /* execute the instruction */
       switch (op)
-	{
+      {
 #define DEFINST(OP,MSK,NAME,OPFORM,RES,FLAGS,O1,O2,I1,I2,I3)		\
 	case OP:							\
         SYMCAT(OP,_IMPL);						\
@@ -542,8 +543,8 @@ sim_main(void)
 #define DECLARE_FAULT(FAULT)						\
 	  { fault = (FAULT); break; }
 #include "machine.def"
-	default:
-	  panic("attempted to execute a bogus opcode");
+      default:
+        panic("attempted to execute a bogus opcode");
       }
 
   if (fault != md_fault_none)
@@ -575,7 +576,6 @@ sim_main(void)
              /* return? */MD_IS_RETURN(op),
              /* stash an update ptr */&update_rec,
              /* stash return stack ptr */&stack_idx);
-
       } else {
         /* get the next predicted fetch address */
         pred_PC = bpred_lookup(pred,
