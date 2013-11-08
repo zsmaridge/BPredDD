@@ -470,6 +470,11 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
       sprintf(buf, "Junk Test Success");
       stat_reg_counter(sdb, buf, "nothing really", &pred->misses, 0, NULL);
   }
+  if (pred->class == BPredDD)
+  {
+      sprintf(buf, "%s.used_ddep", name);
+      stat_reg_counter(sdb, buf, "total number of uses", &pred->used_ddep, 0, NULL);
+  }
   sprintf(buf, "%s.misses", name);
   stat_reg_counter(sdb, buf, "total number of misses", &pred->misses, 0, NULL);
   sprintf(buf, "%s.jr_hits", name);
@@ -549,6 +554,7 @@ bpred_after_priming(struct bpred_t *bpred)
   bpred->retstack_pops = 0;
   bpred->retstack_pushes = 0;
   bpred->ras_hits = 0;
+  bpred->used_ddep = 0;
 }
 
 #define BIMOD_HASH(PRED, ADDR)						\
@@ -606,18 +612,9 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
     case BPredTaken:
     case BPredNotTaken:
     case BPredJunk:
+    case BPredDD:
       break;
 
-    case BPredDD:   /*BZ*/
-      // Compare registers against shadow registers
-      // Which table are we checking against? Need to determine what branch were looking at.
-      for(iTab=0; iTab<pred_dir->config.ddep.l1size; iTab++){       // Iterate through table
-        if(baddr == pred_dir->config.ddep.table[iTab].branch){      // Is this the correct branch
-          p = &pred_dir->config.ddep.table[iTab].target;
-          break;
-        }
-      }
-      break;
     default:
       panic("bogus branch direction predictor class");
     }
@@ -813,6 +810,37 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
   int cnt, iReg;
   int iDiff = 1;
   md_addr_t baddr = regs.regs_PC;
+
+  dir_update_ptr->dir.ras = FALSE;
+  dir_update_ptr->pdir1 = NULL;
+  dir_update_ptr->pdir2 = NULL;
+  dir_update_ptr->pmeta = NULL;
+
+  /* if this is not a branch, return not-taken */
+  if (!(MD_OP_FLAGS(op) & F_CTRL))
+    return 0;
+  pred->lookups++;
+
+  /* record pre-pop TOS; if this branch is executed speculatively
+   * and is squashed, we'll restore the TOS and hope the data
+   * wasn't corrupted in the meantime. */
+  if (pred->retstack.size)
+    *stack_recover_idx = pred->retstack.tos;
+  else
+    *stack_recover_idx = 0;
+
+  /* if this is a return, pop return-address stack */
+  if (is_return && pred->retstack.size)
+    {
+      md_addr_t target = pred->retstack.stack[pred->retstack.tos].target;
+      pred->retstack.tos = (pred->retstack.tos + pred->retstack.size - 1)
+	                   % pred->retstack.size;
+      pred->retstack_pops++;
+      dir_update_ptr->dir.ras = TRUE; /* using RAS here */
+      return target;
+    }
+
+
   for(cnt=0;cnt < pred->dirpred.ddep->config.ddep.l1size;cnt++)
   {
     if(baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch &&
@@ -837,14 +865,19 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
   }
   if(iDiff==0)
   {
-    dir_update_ptr->pdir1 =
-      bpred_dir_lookup (pred->dirpred.ddep, baddr);
+    pred->used_ddep++;
+    return btarget;
   }
   else    //use 2 bit
   {
     dir_update_ptr->pdir1 =
       bpred_dir_lookup (pred->dirpred.bimod, baddr);
+    return((*(dir_update_ptr->pdir1) >= 2)
+           ? 1
+           : 0);
   }
+  //decide to return target or miss
+
 }
 
 /* Speculative execution can corrupt the ret-addr stack.  So for each

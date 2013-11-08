@@ -575,6 +575,7 @@ sim_main(void)
              /* return? */MD_IS_RETURN(op),
              /* stash an update ptr */&update_rec,
              /* stash return stack ptr */&stack_idx);
+
       } else {
         /* get the next predicted fetch address */
         pred_PC = bpred_lookup(pred,

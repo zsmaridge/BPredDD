@@ -185,6 +185,7 @@ struct bpred_t {
   counter_t jr_non_ras_hits;	/* num correct addr-preds for non-RAS JR's */
   counter_t jr_non_ras_seen;	/* num non-RAS JR's seen */
   counter_t misses;		/* num incorrect predictions */
+  counter_t used_ddep; /* num data dependent predictions used (BPredDD) */
 
   counter_t lookups;		/* num lookups */
   counter_t retstack_pops;	/* number of times a value was popped */
