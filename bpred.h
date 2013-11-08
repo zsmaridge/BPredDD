@@ -117,10 +117,11 @@ struct bpred_btb_ent_t {
   struct bpred_btb_ent_t *prev, *next; /* lru chaining pointers */
 };
 
-/* Address lookup table */
-struct alt_t{
+/*BZ* Address lookup table */
+struct alt_t {
   md_addr_t target; /* target address */
   md_addr_t branch; /* branch address */
+  int tag;          /* tag 1-used, 0-unused */
   long int depend; /* data dependence */
   unsigned int *shadowregs; /* shadow registers */
 };
@@ -141,12 +142,12 @@ struct bpred_dir_t {
       int *shiftregs;		/* level-1 history table */
       unsigned char *l2table;	/* level-2 prediction state table */
     } two;
-    struct {
+    struct {          /*BZ*/
       int l1size;
       long int source;
       long int target;
-      alt_t *table;
-    } ddep
+      struct alt_t *table;
+    } ddep;
   } config;
 };
 
@@ -157,6 +158,7 @@ struct bpred_t {
     struct bpred_dir_t *bimod;	  /* first direction predictor */
     struct bpred_dir_t *twolev;	  /* second direction predictor */
     struct bpred_dir_t *meta;	  /* meta predictor */
+    struct bpred_dir_t *ddep;     /*BZ* data dependency predictor */
   } dirpred;
 
   struct {
