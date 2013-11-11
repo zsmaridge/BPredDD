@@ -138,6 +138,7 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
   case BPredComb:
   case BPred2Level:
   case BPred2bit:
+  case BPredDD:     /*BZ*/
     {
       int i;
 
@@ -183,7 +184,6 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
   case BPredTaken:
   case BPredNotTaken:
   case BPredJunk:
-  case BPredDD:     /*BZ*/
     /* no other state */
     break;
 
@@ -700,6 +700,7 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
       }
       break;
     case BPred2bit:
+    case BPredDD:
       if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
       {
         dir_update_ptr->pdir1 =
@@ -852,7 +853,6 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
       return target;
     }
 
-
   for(cnt=0;cnt < pred->dirpred.ddep->config.ddep.l1size;cnt++)
   {
     if(baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch &&
@@ -875,6 +875,7 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
       }
     }
   }
+
   if(iDiff==0)
   {
     //pred->used_ddep++;
@@ -885,11 +886,7 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
   {
     //pred->used_bimod++;
     pred->last_used = BPred2bit;
-    dir_update_ptr->pdir1 =
-      bpred_dir_lookup (pred->dirpred.bimod, baddr);
-    return((*(dir_update_ptr->pdir1) >= 2)
-           ? 1
-           : 0);
+    return bpred_lookup(pred, baddr, btarget, op, is_call, is_return, dir_update_ptr, stack_recover_idx);
   }
   //decide to return target or miss
 
@@ -994,7 +991,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   }
 
   /* Can exit now if this is a stateless predictor */
-  if (pred->class == BPredNotTaken || pred->class == BPredTaken || pred->class == BPredJunk || pred->class == BPredDD)
+  if (pred->class == BPredNotTaken || pred->class == BPredTaken || pred->class == BPredJunk)
     return;
 
   /*
