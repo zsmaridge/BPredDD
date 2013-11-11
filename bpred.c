@@ -472,18 +472,22 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
   }
   if (pred->class == BPredDD)
   {
+      sprintf(buf, "%s.ddep_matches", name);
+      stat_reg_counter(sdb, buf, "total number of ddep matches",
+        &pred->ddep_matches, 0, NULL);
       sprintf(buf, "%s.used_ddep", name);
       stat_reg_counter(sdb, buf, "total number of ddep predictions used",
         &pred->used_ddep, 0, NULL);
-      sprintf(buf, "%s.used_bimod", name);
-      stat_reg_counter(sdb, buf, "total number of bimodal predictions used",
-        &pred->used_bimod, 0, NULL);
       sprintf(buf, "%s.ddep_hits", name);
       stat_reg_counter(sdb, buf, "total number of ddep hits",
         &pred->ddep_hits, 0, NULL  );
+      sprintf(buf, "%s.used_bimod", name);
+      stat_reg_counter(sdb, buf, "total number of bimodal predictions used",
+        &pred->used_bimod, 0, NULL);
       sprintf(buf, "%s.bimod_hits", name);
       stat_reg_counter(sdb, buf, "total number of bimodal hits",
         &pred->bimod_hits, 0, NULL);
+
   }
   sprintf(buf, "%s.misses", name);
   stat_reg_counter(sdb, buf, "total number of misses", &pred->misses, 0, NULL);
@@ -567,6 +571,7 @@ bpred_after_priming(struct bpred_t *bpred)
   bpred->used_ddep = 0;
   bpred->ddep_hits = 0;
   bpred->bimod_hits = 0;
+  bpred->ddep_matches = 0;
 }
 
 #define BIMOD_HASH(PRED, ADDR)						\
@@ -821,7 +826,9 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
 	     int *stack_recover_idx)	/* Non-speculative top-of-stack; */
 {
   int cnt, iReg;
-  int iDiff = 1;
+  int bMatch = 0;
+  int bMiss = 0;
+  int iHitIndex;
   md_addr_t baddr = regs.regs_PC;
 
   dir_update_ptr->dir.ras = FALSE;
@@ -832,7 +839,6 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
   /* if this is not a branch, return not-taken */
   if (!(MD_OP_FLAGS(op) & F_CTRL))
     return 0;
-  pred->lookups++;
 
   /* record pre-pop TOS; if this branch is executed speculatively
    * and is squashed, we'll restore the TOS and hope the data
@@ -853,40 +859,46 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
       return target;
     }
 
-  for(cnt=0;cnt < pred->dirpred.ddep->config.ddep.l1size;cnt++)
+  for(cnt=0;(cnt < pred->dirpred.ddep->config.ddep.l1size) && (bMatch==0);cnt++)
   {
-    if(baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch &&
-       (pred->dirpred.ddep->config.ddep.source &
-        pred->dirpred.ddep->config.ddep.target ==
-        pred->dirpred.ddep->config.ddep.table[cnt].depend))
+    if((baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch) &&
+       ((pred->dirpred.ddep->config.ddep.source &
+        pred->dirpred.ddep->config.ddep.target) ==
+        (pred->dirpred.ddep->config.ddep.table[cnt].depend)))
     {
-      iDiff = 0;
-      for(iReg=0; iReg<32; iReg++)
+      bMatch = 1;
+      iHitIndex = cnt;
+      for(iReg=0; (iReg<32) && (bMiss==0); iReg++)
       {
         if((1<<iReg) == (1<<iReg)&(pred->dirpred.ddep->config.ddep.table[cnt].depend))
         {
           if(pred->dirpred.ddep->config.ddep.table[cnt].shadowregs[iReg]!=
-             regs.regs_R[iReg])
+             (regs.regs_R[iReg] & SHADOW_MASK))
           {
-               iDiff=1;
-               break; //does not match, abort
+               bMiss = 1;
           }
         }
       }
     }
   }
 
-  if(iDiff==0)
-  {
-    //pred->used_ddep++;
-    pred->last_used = BPredDD;
-    return btarget;
-  }
-  else    //use 2 bit
-  {
-    //pred->used_bimod++;
-    pred->last_used = BPred2bit;
-    return bpred_lookup(pred, baddr, btarget, op, is_call, is_return, dir_update_ptr, stack_recover_idx);
+  if(bMatch==1){
+    pred->ddep_matches++;
+
+    if(bMiss==0)
+    {
+      pred->lookups++;
+      //pred->used_ddep++;
+      pred->last_used = BPredDD;
+      return pred->dirpred.ddep->config.ddep.table[iHitIndex].target;
+    }
+    else    //use 2 bit
+    {
+      //pred->used_bimod++;
+      pred->last_used = BPred2bit;
+      return bpred_lookup(pred, baddr, btarget, op, is_call, is_return, dir_update_ptr, stack_recover_idx);
+
+    }
   }
   //decide to return target or miss
 
@@ -952,10 +964,8 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   else
     pred->misses++;
 
-  if(pred->last_used == BPredDD){
-    pred->used_ddep++;
-  }
-  else if (dir_update_ptr->dir.ras)
+
+  if (dir_update_ptr->dir.ras)
   {
     pred->used_ras++;
     if (correct)
@@ -963,7 +973,15 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   }
   else if ((MD_OP_FLAGS(op) & (F_CTRL|F_COND)) == (F_CTRL|F_COND))
   {
-    if (dir_update_ptr->dir.meta)
+    if(pred->class == BPredDD){
+      if(pred->last_used == BPredDD){
+        pred->used_ddep++;
+      }
+      else if(pred->last_used == BPred2bit){
+        pred->used_bimod++;
+      }
+    }
+    else if (dir_update_ptr->dir.meta)
       pred->used_2lev++;
     else
       pred->used_bimod++;
@@ -1213,14 +1231,14 @@ bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
   pred->dirpred.ddep->config.ddep.table[iEntry].depend = depend;
 
   //Store target address
-  pred->dirpred.ddep->config.ddep.table[iEntry].target = btarget;
+  pred->dirpred.ddep->config.ddep.table[iEntry].target = (taken ? btarget : 0);
 
   //Store shadow registers
   for(iReg=0; iReg<32; iReg++)
   {
     if((1<<iReg) == (1<<iReg)&(depend))
     {
-      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=regs.regs_R[iReg];
+      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=regs.regs_R[iReg] & SHADOW_MASK;
     }
     else
     {

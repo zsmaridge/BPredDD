@@ -62,6 +62,8 @@
 #include "stats.h"
 #include "regs.h"
 
+#define SHADOW_MASK 0x000001FF
+
 /*
  * This module implements a number of branch predictor mechanisms.  The
  * following predictors are supported:
@@ -189,6 +191,7 @@ struct bpred_t {
   counter_t used_ddep; /* num data dependent predictions used (BPredDD) */
   counter_t ddep_hits;  /* num of hits for data depedent preditcotr */
   counter_t bimod_hits; /* num of hits for 2-bit predictor */
+  counter_t ddep_matches; /* num of branches that have matching dependencies */
 
   counter_t lookups;		/* num lookups */
   counter_t retstack_pops;	/* number of times a value was popped */

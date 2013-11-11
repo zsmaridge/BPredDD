@@ -185,95 +185,95 @@ void
 sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
 {
   if (!mystricmp(pred_type, "taken"))
-    {
-      /* static predictor, not taken */
-      pred = bpred_create(BPredTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-    }
+  {
+    /* static predictor, not taken */
+    pred = bpred_create(BPredTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
   else if (!mystricmp(pred_type, "nottaken"))
-    {
-      /* static predictor, taken */
-      pred = bpred_create(BPredNotTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-    }
+  {
+    /* static predictor, taken */
+    pred = bpred_create(BPredNotTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
   else if (!mystricmp(pred_type, "bimod"))
-    {
-      if (bimod_nelt != 1)
-	fatal("bad bimod predictor config (<table_size>)");
-      if (btb_nelt != 2)
-	fatal("bad btb config (<num_sets> <associativity>)");
+  {
+    if (bimod_nelt != 1)
+      fatal("bad bimod predictor config (<table_size>)");
+    if (btb_nelt != 2)
+      fatal("bad btb config (<num_sets> <associativity>)");
 
-      /* bimodal predictor, bpred_create() checks BTB_SIZE */
-      pred = bpred_create(BPred2bit,
-			  /* bimod table size */bimod_config[0],
-			  /* 2lev l1 size */0,
-			  /* 2lev l2 size */0,
-			  /* meta table size */0,
-			  /* history reg size */0,
-			  /* history xor address */0,
-			  /* btb sets */btb_config[0],
-			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
-    }
+    /* bimodal predictor, bpred_create() checks BTB_SIZE */
+    pred = bpred_create(BPred2bit,
+      /* bimod table size */bimod_config[0],
+      /* 2lev l1 size */0,
+      /* 2lev l2 size */0,
+      /* meta table size */0,
+      /* history reg size */0,
+      /* history xor address */0,
+      /* btb sets */btb_config[0],
+      /* btb assoc */btb_config[1],
+      /* ret-addr stack size */ras_size);
+  }
   else if (!mystricmp(pred_type, "2lev"))
-    {
-      /* 2-level adaptive predictor, bpred_create() checks args */
-      if (twolev_nelt != 4)
-	fatal("bad 2-level pred config (<l1size> <l2size> <hist_size> <xor>)");
-      if (btb_nelt != 2)
-	fatal("bad btb config (<num_sets> <associativity>)");
+  {
+    /* 2-level adaptive predictor, bpred_create() checks args */
+    if (twolev_nelt != 4)
+      fatal("bad 2-level pred config (<l1size> <l2size> <hist_size> <xor>)");
+    if (btb_nelt != 2)
+      fatal("bad btb config (<num_sets> <associativity>)");
 
-      pred = bpred_create(BPred2Level,
-			  /* bimod table size */0,
-			  /* 2lev l1 size */twolev_config[0],
-			  /* 2lev l2 size */twolev_config[1],
-			  /* meta table size */0,
-			  /* history reg size */twolev_config[2],
-			  /* history xor address */twolev_config[3],
-			  /* btb sets */btb_config[0],
-			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
-    }
+    pred = bpred_create(BPred2Level,
+      /* bimod table size */0,
+      /* 2lev l1 size */twolev_config[0],
+      /* 2lev l2 size */twolev_config[1],
+      /* meta table size */0,
+      /* history reg size */twolev_config[2],
+      /* history xor address */twolev_config[3],
+      /* btb sets */btb_config[0],
+      /* btb assoc */btb_config[1],
+      /* ret-addr stack size */ras_size);
+  }
   else if (!mystricmp(pred_type, "comb"))
-    {
-      /* combining predictor, bpred_create() checks args */
-      if (twolev_nelt != 4)
-	fatal("bad 2-level pred config (<l1size> <l2size> <hist_size> <xor>)");
-      if (bimod_nelt != 1)
-	fatal("bad bimod predictor config (<table_size>)");
-      if (comb_nelt != 1)
-	fatal("bad combining predictor config (<meta_table_size>)");
-      if (btb_nelt != 2)
-	fatal("bad btb config (<num_sets> <associativity>)");
+  {
+    /* combining predictor, bpred_create() checks args */
+    if (twolev_nelt != 4)
+      fatal("bad 2-level pred config (<l1size> <l2size> <hist_size> <xor>)");
+    if (bimod_nelt != 1)
+      fatal("bad bimod predictor config (<table_size>)");
+    if (comb_nelt != 1)
+      fatal("bad combining predictor config (<meta_table_size>)");
+    if (btb_nelt != 2)
+      fatal("bad btb config (<num_sets> <associativity>)");
 
-      pred = bpred_create(BPredComb,
-			  /* bimod table size */bimod_config[0],
-			  /* l1 size */twolev_config[0],
-			  /* l2 size */twolev_config[1],
-			  /* meta table size */comb_config[0],
-			  /* history reg size */twolev_config[2],
-			  /* history xor address */twolev_config[3],
-			  /* btb sets */btb_config[0],
-			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
-    }
-    else if (!mystricmp(pred_type, "ddep"))   /*ZS*/
-    {
-      if (bimod_nelt != 1)
-        fatal("bad bimod predictor config (<table_size>)");
-      if (btb_nelt != 2)
-        fatal("bad btb config (<num_sets> <associativity>)");
+    pred = bpred_create(BPredComb,
+      /* bimod table size */bimod_config[0],
+      /* l1 size */twolev_config[0],
+      /* l2 size */twolev_config[1],
+      /* meta table size */comb_config[0],
+      /* history reg size */twolev_config[2],
+      /* history xor address */twolev_config[3],
+      /* btb sets */btb_config[0],
+      /* btb assoc */btb_config[1],
+      /* ret-addr stack size */ras_size);
+  }
+  else if (!mystricmp(pred_type, "ddep"))   /*ZS*/
+  {
+    if (bimod_nelt != 1)
+      fatal("bad bimod predictor config (<table_size>)");
+    if (btb_nelt != 2)
+      fatal("bad btb config (<num_sets> <associativity>)");
 
-      /* static predictor, taken */
-      pred = bpred_create(BPredDD,
-			  /* bimod table size */bimod_config[0],
-			  /* 2lev l1 size */twolev_config[0],          // Size of ALT
-			  /* 2lev l2 size */0,
-			  /* meta table size */0,
-			  /* history reg size */0,
-			  /* history xor address */0,
-			  /* btb sets */btb_config[0],
-			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
-    }
+    /* static predictor, taken */
+    pred = bpred_create(BPredDD,
+      /* bimod table size */bimod_config[0],
+      /* 2lev l1 size */twolev_config[0],          // Size of ALT
+      /* 2lev l2 size */0,
+      /* meta table size */0,
+      /* history reg size */0,
+      /* history xor address */0,
+      /* btb sets */btb_config[0],
+      /* btb assoc */btb_config[1],
+      /* ret-addr stack size */ras_size);
+  }
   else
     fatal("cannot parse predictor type `%s'", pred_type);
 }
@@ -464,9 +464,6 @@ sim_main(void)
   register int is_write;
   int stack_idx;
   enum md_fault_type fault;
-  /****ZS****/
-  //int i, j=0;
-  //int fl=0, nfl=0;
 
   fprintf(stderr, "sim: ** starting functional simulation w/ predictors **\n");
 
