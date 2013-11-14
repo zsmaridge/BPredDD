@@ -90,9 +90,13 @@ static int bimod_config[1] =
 /* 2-level predictor config (<l1size> <l2size> <hist_size> <xor>) */
 static int twolev_nelt = 4;
 static int twolev_config[4] =
-  { /* l1size */100, /* l2size */1024, /* hist */8, /* xor */FALSE};
+  { /* l1size */1, /* l2size */1024, /* hist */8, /* xor */FALSE};
 
+/*BZ* Static config for data dependent predictor */
+static int ddep_config[1] =
+  { /* l1size */20  };
 /* combining predictor config (<meta_table_size> */
+
 static int comb_nelt = 1;
 static int comb_config[1] =
   { /* meta_table_size */1024 };
@@ -265,7 +269,7 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
     /* static predictor, taken */
     pred = bpred_create(BPredDD,
       /* bimod table size */bimod_config[0],
-      /* 2lev l1 size */twolev_config[0],          // Size of ALT
+      /* 2lev l1 size */ddep_config[0],          // Size of ALT
       /* 2lev l2 size */0,
       /* meta table size */0,
       /* history reg size */0,

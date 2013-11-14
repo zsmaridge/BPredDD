@@ -290,6 +290,9 @@ bpred_dir_create (
         fatal("cannot allocate shadow register file\n");
     }
 
+    if(!(pred_dir->config.ddep.num_table = calloc(l1size, sizeof(unsigned int))))
+      fatal("cannot allocate lru table for address lookup table");
+
     break;
   case BPredTaken:
   case BPredNotTaken:
@@ -411,6 +414,7 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
 		struct stat_sdb_t *sdb)	/* stats database */
 {
   char buf[512], buf1[512], *name;
+  float ratio;
 
   /* get a name for this predictor */
   switch (pred->class)
@@ -443,12 +447,15 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
   sprintf(buf, "%s.lookups", name);
   stat_reg_counter(sdb, buf, "total number of bpred lookups",
 		   &pred->lookups, 0, NULL);
+
   sprintf(buf, "%s.updates", name);
   sprintf(buf1, "%s.dir_hits + %s.misses", name, name);
   stat_reg_formula(sdb, buf, "total number of updates", buf1, "%12.0f");
+
   sprintf(buf, "%s.addr_hits", name);
   stat_reg_counter(sdb, buf, "total number of address-predicted hits",
 		   &pred->addr_hits, 0, NULL);
+
   sprintf(buf, "%s.dir_hits", name);
   stat_reg_counter(sdb, buf,
 		   "total number of direction-predicted hits "
@@ -460,6 +467,7 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
     stat_reg_counter(sdb, buf,
          "total number of bimodal predictions used",
          &pred->used_bimod, 0, NULL);
+
     sprintf(buf, "%s.used_2lev", name);
     stat_reg_counter(sdb, buf,
          "total number of 2-level predictions used",
@@ -472,81 +480,106 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
   }
   if (pred->class == BPredDD)
   {
-      sprintf(buf, "%s.ddep_matches", name);
+      sprintf(buf, "\n###BZ###\n%s.ddep_matches", name);
       stat_reg_counter(sdb, buf, "total number of ddep matches",
         &pred->ddep_matches, 0, NULL);
+
       sprintf(buf, "%s.used_ddep", name);
       stat_reg_counter(sdb, buf, "total number of ddep predictions used",
         &pred->used_ddep, 0, NULL);
+
       sprintf(buf, "%s.ddep_hits", name);
       stat_reg_counter(sdb, buf, "total number of ddep hits",
         &pred->ddep_hits, 0, NULL  );
+
+      sprintf(buf, "%s.ddep_addr_rate", name);
+      sprintf(buf1, "%s.ddep_hits / %s.used_ddep", name, name);
+      stat_reg_formula(sdb, buf,
+        "ddep address-prediction rate (i.e., addr-hits/updates)",
+        buf1, "%9.4f");
+
       sprintf(buf, "%s.used_bimod", name);
       stat_reg_counter(sdb, buf, "total number of bimodal predictions used",
         &pred->used_bimod, 0, NULL);
+
       sprintf(buf, "%s.bimod_hits", name);
       stat_reg_counter(sdb, buf, "total number of bimodal hits",
         &pred->bimod_hits, 0, NULL);
 
+      sprintf(buf, "%s.bimod_addr_rate", name);
+      sprintf(buf1, "%s.bimod_hits / %s.used_bimod", name, name);
+      stat_reg_formula(sdb, buf,
+        "2-bit address-prediction rate (i.e., addr-hits/updates)\n###BZ###\n",
+        buf1, "%9.4f");
+
   }
   sprintf(buf, "%s.misses", name);
   stat_reg_counter(sdb, buf, "total number of misses", &pred->misses, 0, NULL);
+
   sprintf(buf, "%s.jr_hits", name);
   stat_reg_counter(sdb, buf,
 		   "total number of address-predicted hits for JR's",
 		   &pred->jr_hits, 0, NULL);
+
   sprintf(buf, "%s.jr_seen", name);
-  stat_reg_counter(sdb, buf,
-		   "total number of JR's seen",
+  stat_reg_counter(sdb, buf, "total number of JR's seen",
 		   &pred->jr_seen, 0, NULL);
+
   sprintf(buf, "%s.jr_non_ras_hits.PP", name);
   stat_reg_counter(sdb, buf,
-		   "total number of address-predicted hits for non-RAS JR's",
+      "total number of address-predicted hits for non-RAS JR's",
 		   &pred->jr_non_ras_hits, 0, NULL);
+
   sprintf(buf, "%s.jr_non_ras_seen.PP", name);
   stat_reg_counter(sdb, buf,
 		   "total number of non-RAS JR's seen",
 		   &pred->jr_non_ras_seen, 0, NULL);
+
   sprintf(buf, "%s.bpred_addr_rate", name);
   sprintf(buf1, "%s.addr_hits / %s.updates", name, name);
   stat_reg_formula(sdb, buf,
 		   "branch address-prediction rate (i.e., addr-hits/updates)",
 		   buf1, "%9.4f");
+
   sprintf(buf, "%s.bpred_dir_rate", name);
   sprintf(buf1, "%s.dir_hits / %s.updates", name, name);
   stat_reg_formula(sdb, buf,
 		  "branch direction-prediction rate (i.e., all-hits/updates)",
 		  buf1, "%9.4f");
+
   sprintf(buf, "%s.bpred_jr_rate", name);
   sprintf(buf1, "%s.jr_hits / %s.jr_seen", name, name);
   stat_reg_formula(sdb, buf,
 		  "JR address-prediction rate (i.e., JR addr-hits/JRs seen)",
 		  buf1, "%9.4f");
+
   sprintf(buf, "%s.bpred_jr_non_ras_rate.PP", name);
   sprintf(buf1, "%s.jr_non_ras_hits.PP / %s.jr_non_ras_seen.PP", name, name);
   stat_reg_formula(sdb, buf,
 		   "non-RAS JR addr-pred rate (ie, non-RAS JR hits/JRs seen)",
 		   buf1, "%9.4f");
+
   sprintf(buf, "%s.retstack_pushes", name);
   stat_reg_counter(sdb, buf,
 		   "total number of address pushed onto ret-addr stack",
 		   &pred->retstack_pushes, 0, NULL);
+
   sprintf(buf, "%s.retstack_pops", name);
   stat_reg_counter(sdb, buf,
 		   "total number of address popped off of ret-addr stack",
 		   &pred->retstack_pops, 0, NULL);
+
   sprintf(buf, "%s.used_ras.PP", name);
-  stat_reg_counter(sdb, buf,
-		   "total number of RAS predictions used",
-		   &pred->used_ras, 0, NULL);
+  stat_reg_counter(sdb, buf, "total number of RAS predictions used",
+        &pred->used_ras, 0, NULL);
+
   sprintf(buf, "%s.ras_hits.PP", name);
-  stat_reg_counter(sdb, buf,
-		   "total number of RAS hits",
-		   &pred->ras_hits, 0, NULL);
+  stat_reg_counter(sdb, buf, "total number of RAS hits",
+        &pred->ras_hits, 0, NULL);
+
   sprintf(buf, "%s.ras_rate.PP", name);
   sprintf(buf1, "%s.ras_hits.PP / %s.used_ras.PP", name, name);
-  stat_reg_formula(sdb, buf,
-		   "RAS prediction rate (i.e., RAS hits/used RAS)",
+  stat_reg_formula(sdb, buf, "RAS prediction rate (i.e., RAS hits/used RAS)",
 		   buf1, "%9.4f");
 }
 
@@ -837,8 +870,12 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
   dir_update_ptr->pmeta = NULL;
 
   /* if this is not a branch, return not-taken */
-  if (!(MD_OP_FLAGS(op) & F_CTRL))
+  if (!(MD_OP_FLAGS(op) & F_CTRL)){
+    pred->last_used = BPredJunk;    /*BZ*/
     return 0;
+  }
+
+  pred->lookups++;
 
   /* record pre-pop TOS; if this branch is executed speculatively
    * and is squashed, we'll restore the TOS and hope the data
@@ -850,14 +887,27 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
 
   /* if this is a return, pop return-address stack */
   if (is_return && pred->retstack.size)
-    {
-      md_addr_t target = pred->retstack.stack[pred->retstack.tos].target;
-      pred->retstack.tos = (pred->retstack.tos + pred->retstack.size - 1)
-	                   % pred->retstack.size;
-      pred->retstack_pops++;
-      dir_update_ptr->dir.ras = TRUE; /* using RAS here */
-      return target;
-    }
+  {
+    md_addr_t target = pred->retstack.stack[pred->retstack.tos].target;
+    pred->retstack.tos = (pred->retstack.tos + pred->retstack.size - 1)
+                   % pred->retstack.size;
+    pred->retstack_pops++;
+    dir_update_ptr->dir.ras = TRUE; /* using RAS here */
+
+    pred->last_used = BPredJunk;    /*BZ*/
+    return target;
+  }
+
+#ifndef RAS_BUG_COMPATIBLE
+  /* if function call, push return-address onto return-address stack */
+  if (is_call && pred->retstack.size)
+  {
+    pred->retstack.tos = (pred->retstack.tos + 1)% pred->retstack.size;
+    pred->retstack.stack[pred->retstack.tos].target =
+      baddr + sizeof(md_inst_t);
+    pred->retstack_pushes++;
+  }
+#endif /* !RAS_BUG_COMPATIBLE */
 
   for(cnt=0;(cnt < pred->dirpred.ddep->config.ddep.l1size) && (bMatch==0);cnt++)
   {
@@ -884,23 +934,22 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
 
   if(bMatch==1){
     pred->ddep_matches++;
-
-    if(bMiss==0)
-    {
-      pred->lookups++;
-      //pred->used_ddep++;
-      pred->last_used = BPredDD;
-      return pred->dirpred.ddep->config.ddep.table[iHitIndex].target;
-    }
-    else    //use 2 bit
-    {
-      //pred->used_bimod++;
-      pred->last_used = BPred2bit;
-      return bpred_lookup(pred, baddr, btarget, op, is_call, is_return, dir_update_ptr, stack_recover_idx);
-
-    }
   }
-  //decide to return target or miss
+
+  if(bMatch==1 && bMiss==0)
+  {
+    pred->used_ddep++;
+    pred->last_used = BPredDD;
+    return pred->dirpred.ddep->config.ddep.table[iHitIndex].target;
+  }
+  else    //use 2 bit
+  {
+    pred->lookups--;
+    pred->used_bimod++;
+    pred->last_used = BPred2bit;
+    return bpred_lookup(pred, baddr, btarget, op, is_call, is_return, dir_update_ptr, stack_recover_idx);
+
+  }
 
 }
 
@@ -951,29 +1000,42 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 
   if (correct){
     pred->addr_hits++;
-    if(pred->last_used == BPredDD){
+    /*if(pred->last_used == BPredDD){
       pred->ddep_hits++;
     }
     else{
       pred->bimod_hits++;
-    }
+    }*/
   }
 
-  if (!!pred_taken == !!taken)
+  if (!!pred_taken == !!taken){
     pred->dir_hits++;
-  else
+    //if((MD_OP_FLAGS(op) & (F_CTRL|F_COND)) == (F_CTRL|F_COND)){   /*BZ*/
+    if(pred->class == BPredDD){
+      if(pred->last_used == BPredDD){
+        pred->ddep_hits++;
+      }
+      else if(pred->last_used == BPred2bit){
+        pred->bimod_hits++;
+      }
+    }
+  }
+  else{
     pred->misses++;
+  }
 
 
   if (dir_update_ptr->dir.ras)
   {
     pred->used_ras++;
     if (correct)
+    {
       pred->ras_hits++;
+    }
   }
   else if ((MD_OP_FLAGS(op) & (F_CTRL|F_COND)) == (F_CTRL|F_COND))
   {
-    if(pred->class == BPredDD){
+    /*if(pred->class == BPredDD){
       if(pred->last_used == BPredDD){
         pred->used_ddep++;
       }
@@ -981,9 +1043,10 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
         pred->used_bimod++;
       }
     }
-    else if (dir_update_ptr->dir.meta)
+    else*/
+    if (dir_update_ptr->dir.meta)
       pred->used_2lev++;
-    else
+    else if(pred->class != BPredDD)
       pred->used_bimod++;
   }
 

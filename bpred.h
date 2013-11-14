@@ -62,7 +62,7 @@
 #include "stats.h"
 #include "regs.h"
 
-#define SHADOW_MASK 0x000001FF
+#define SHADOW_MASK 0x00000000
 
 /*
  * This module implements a number of branch predictor mechanisms.  The
@@ -150,6 +150,7 @@ struct bpred_dir_t {
       long int source;
       long int target;
       struct alt_t *table;
+      int *num_table;
     } ddep;
   } config;
 };
