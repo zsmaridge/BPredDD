@@ -55,6 +55,8 @@
 #define dassert(a) assert(a)
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include "host.h"
 #include "misc.h"
@@ -62,7 +64,8 @@
 #include "stats.h"
 #include "regs.h"
 
-#define SHADOW_MASK 0x00000000
+
+#define SHADOW_MASK 0x00C00000
 
 /*
  * This module implements a number of branch predictor mechanisms.  The

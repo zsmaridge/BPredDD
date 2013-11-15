@@ -77,6 +77,7 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
 	     unsigned int retstack_size) /* num entries in ret-addr stack */
 {
   struct bpred_t *pred;
+  srand(time(NULL));
 
   if (!(pred = calloc(1, sizeof(struct bpred_t))))
     fatal("out of virtual memory");
@@ -414,7 +415,6 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
 		struct stat_sdb_t *sdb)	/* stats database */
 {
   char buf[512], buf1[512], *name;
-  float ratio;
 
   /* get a name for this predictor */
   switch (pred->class)
@@ -509,9 +509,14 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
       sprintf(buf, "%s.bimod_addr_rate", name);
       sprintf(buf1, "%s.bimod_hits / %s.used_bimod", name, name);
       stat_reg_formula(sdb, buf,
-        "2-bit address-prediction rate (i.e., addr-hits/updates)\n###BZ###\n",
+        "2-bit address-prediction rate (i.e., addr-hits/updates)",
         buf1, "%9.4f");
 
+      sprintf(buf, "%s.ddep utlization rate", name);
+      sprintf(buf1, "%s.used_ddep / %s.used_bimod", name, name);
+      stat_reg_formula(sdb, buf,
+        "data dependent prediction utilization (i.e., used_ddep/(used_ddep+used_bimod))\n###BZ###\n",
+        buf1, "%9.4f");
   }
   sprintf(buf, "%s.misses", name);
   stat_reg_counter(sdb, buf, "total number of misses", &pred->misses, 0, NULL);
@@ -617,8 +622,6 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 		 md_addr_t baddr)		/* branch address */
 {
   unsigned char *p = NULL;
-  int iTab, iReg;
-  int differ;
 
   /* Except for jumps, get a pointer to direction-prediction bits */
   switch (pred_dir->class) {
@@ -691,7 +694,7 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
 					 * used on mispredict recovery */
 {
   struct bpred_btb_ent_t *pbtb = NULL;
-  int index, i, cnt;
+  int index, i;
   if (!dir_update_ptr)
     panic("no bpred update record");
 
@@ -751,16 +754,16 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
       return btarget;
     case BPredNotTaken:
       if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
-	{
-	  return baddr + sizeof(md_inst_t);
-	}
+      {
+        return baddr + sizeof(md_inst_t);
+      }
       else
-	{
-	  return btarget;
-	}
+      {
+        return btarget;
+      }
     default:
       panic("bogus predictor class");
-  }
+    }
 
   /*
    * We have a stateful predictor, and have gotten a pointer into the
@@ -918,14 +921,14 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
     {
       bMatch = 1;
       iHitIndex = cnt;
-      for(iReg=0; (iReg<32) && (bMiss==0); iReg++)
+      for(iReg=0; (iReg<32)/* && (bMiss==0)*/; iReg++)
       {
-        if((1<<iReg) == (1<<iReg)&(pred->dirpred.ddep->config.ddep.table[cnt].depend))
+        if((1<<iReg) == ((1<<iReg)&(pred->dirpred.ddep->config.ddep.table[cnt].depend)))
         {
           if(pred->dirpred.ddep->config.ddep.table[cnt].shadowregs[iReg]!=
              (regs.regs_R[iReg] & SHADOW_MASK))
           {
-               bMiss = 1;
+               bMiss++;
           }
         }
       }
@@ -936,7 +939,7 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
     pred->ddep_matches++;
   }
 
-  if(bMatch==1 && bMiss==0)
+  if((bMatch==1) && (bMiss<1))
   {
     pred->used_ddep++;
     pred->last_used = BPredDD;
@@ -947,10 +950,10 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
     pred->lookups--;
     pred->used_bimod++;
     pred->last_used = BPred2bit;
-    return bpred_lookup(pred, baddr, btarget, op, is_call, is_return, dir_update_ptr, stack_recover_idx);
+    return bpred_lookup(pred, baddr, btarget, op, is_call, is_return,
+      dir_update_ptr, stack_recover_idx);
 
   }
-
 }
 
 /* Speculative execution can corrupt the ret-addr stack.  So for each
@@ -989,7 +992,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 {
   struct bpred_btb_ent_t *pbtb = NULL;
   struct bpred_btb_ent_t *lruhead = NULL, *lruitem = NULL;
-  int index, i, cnt;
+  int index, i;
 
   /* don't change bpred state for non-branch instructions or if this
    * is a stateless predictor*/
@@ -1250,6 +1253,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
     }
   }
 }
+
 void
 bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
 	     struct regs_t regs,		/* branch address */
@@ -1261,10 +1265,10 @@ bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
 	     struct bpred_update_t *dir_update_ptr)/* pred state pointer */
 {
   int cnt, iReg;
-  int iEntry = pred->dirpred.ddep->config.ddep.l1count;
-  int bFound = 0;
-  long int depend = pred->dirpred.ddep->config.ddep.source &
-    pred->dirpred.ddep->config.ddep.target;
+  int iEntry = rand() % pred->dirpred.ddep->config.ddep.l1size;
+
+  long int depend = (pred->dirpred.ddep->config.ddep.source &
+    pred->dirpred.ddep->config.ddep.target);
 
   /* Update counters */
   md_addr_t baddr = regs.regs_PC;
@@ -1278,9 +1282,9 @@ bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
   //  &pred->btb.btb_data[index];
   for(cnt=0;cnt < pred->dirpred.ddep->config.ddep.l1size;cnt++)
   {
-    if(baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch &&
-       (pred->dirpred.ddep->config.ddep.source &
-        pred->dirpred.ddep->config.ddep.target ==
+    if((baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch) &&
+       ((pred->dirpred.ddep->config.ddep.source &
+        pred->dirpred.ddep->config.ddep.target) ==
         pred->dirpred.ddep->config.ddep.table[cnt].depend))
     {
       //Found
@@ -1299,9 +1303,9 @@ bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
   //Store shadow registers
   for(iReg=0; iReg<32; iReg++)
   {
-    if((1<<iReg) == (1<<iReg)&(depend))
+    if((1<<iReg) == ((1<<iReg)&(depend)))
     {
-      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=regs.regs_R[iReg] & SHADOW_MASK;
+      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=(regs.regs_R[iReg] & SHADOW_MASK);
     }
     else
     {
@@ -1309,12 +1313,16 @@ bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
     }
   }
 
-  pred->dirpred.ddep->config.ddep.l1count++;
-  if(++iEntry==pred->dirpred.ddep->config.ddep.l1size)
+  /*pred->dirpred.ddep->config.ddep.l1count++;
+  if(++iEntry==pred->dirpred.ddep->config.ddep.l1size){
     pred->dirpred.ddep->config.ddep.l1count = 0;
+  }*/
 
+  pred->dirpred.ddep->config.ddep.source = 0;
+  pred->dirpred.ddep->config.ddep.target = -1;
 
 }
+
 /*BZ*/
 /* update the bpred data dependence */
 /* we assume that the instruction and register dependencies
@@ -1331,7 +1339,7 @@ bpreddd_str_update(struct bpred_t *pred, word_t inst)
   regC = RC;
 
   /* everything else */
-  if(MD_OP_FLAGS(op) & F_ICOMP | MD_OP_FLAGS(op) & F_RR)
+  if((MD_OP_FLAGS(op) & F_ICOMP) | (MD_OP_FLAGS(op) & F_RR))
   {
     pred->dirpred.ddep->config.ddep.source |= ((1 << regA) | (1 << regB));
     pred->dirpred.ddep->config.ddep.target &= (~(1 << regC));
