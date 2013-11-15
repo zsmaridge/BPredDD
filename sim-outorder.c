@@ -2,20 +2,20 @@
 
 /* SimpleScalar(TM) Tool Suite
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
- * All Rights Reserved. 
- * 
+ * All Rights Reserved.
+ *
  * THIS IS A LEGAL DOCUMENT, BY USING SIMPLESCALAR,
  * YOU ARE AGREEING TO THESE TERMS AND CONDITIONS.
- * 
+ *
  * No portion of this work may be used by any commercial entity, or for any
  * commercial purpose, without the prior, written permission of SimpleScalar,
  * LLC (info@simplescalar.com). Nonprofit and noncommercial use is permitted
  * as described below.
- * 
+ *
  * 1. SimpleScalar is provided AS IS, with no warranty of any kind, express
  * or implied. The user of the program accepts full responsibility for the
  * application of the program and the use of any results.
- * 
+ *
  * 2. Nonprofit and noncommercial use is encouraged. SimpleScalar may be
  * downloaded, compiled, executed, copied, and modified solely for nonprofit,
  * educational, noncommercial research, and noncommercial scholarship
@@ -24,13 +24,13 @@
  * solely for nonprofit, educational, noncommercial research, and
  * noncommercial scholarship purposes provided that this notice in its
  * entirety accompanies all copies.
- * 
+ *
  * 3. ALL COMMERCIAL USE, AND ALL USE BY FOR PROFIT ENTITIES, IS EXPRESSLY
  * PROHIBITED WITHOUT A LICENSE FROM SIMPLESCALAR, LLC (info@simplescalar.com).
- * 
+ *
  * 4. No nonprofit user may place any restrictions on the use of this software,
  * including as modified by the user, by any other authorized user.
- * 
+ *
  * 5. Noncommercial and nonprofit users may distribute copies of SimpleScalar
  * in compiled or executable form as set forth in Section 2, provided that
  * either: (A) it is accompanied by the corresponding machine-readable source
@@ -40,11 +40,11 @@
  * must permit verbatim duplication by anyone, or (C) it is distributed by
  * someone who received only the executable form, and is accompanied by a
  * copy of the written offer of source code.
- * 
+ *
  * 6. SimpleScalar was developed by Todd M. Austin, Ph.D. The tool suite is
  * currently maintained by SimpleScalar LLC (info@simplescalar.com). US Mail:
  * 2395 Timbercrest Court, Ann Arbor, MI 48105.
- * 
+ *
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
  */
 
@@ -122,6 +122,11 @@ static int bimod_config[1] =
 static int twolev_nelt = 4;
 static int twolev_config[4] =
   { /* l1size */1, /* l2size */1024, /* hist */8, /* xor */FALSE};
+
+/*BZ* Static config for data dependent predictor */
+static int ddep_nelt = 1;
+static int ddep_config[1] =
+  { /* l1size */100  };
 
 /* combining predictor config (<meta_table_size> */
 static int comb_nelt = 1;
@@ -573,7 +578,7 @@ dtlb_access_fn(enum mem_cmd cmd,	/* access cmd, Read or Write */
 void
 sim_reg_options(struct opt_odb_t *odb)
 {
-  opt_reg_header(odb, 
+  opt_reg_header(odb,
 "sim-outorder: This simulator implements a very detailed out-of-order issue\n"
 "superscalar processor with a two-level memory system and speculative\n"
 "execution support.  This simulator is a performance simulator, tracking the\n"
@@ -663,14 +668,20 @@ sim_reg_options(struct opt_odb_t *odb)
   opt_reg_int_list(odb, "-bpred:2lev",
                    "2-level predictor config "
 		   "(<l1size> <l2size> <hist_size> <xor>)",
-                   twolev_config, twolev_nelt, &twolev_nelt,
+       twolev_config, twolev_nelt, &twolev_nelt,
 		   /* default */twolev_config,
-                   /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
+       /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
 
   opt_reg_int_list(odb, "-bpred:comb",
 		   "combining predictor config (<meta_table_size>)",
 		   comb_config, comb_nelt, &comb_nelt,
 		   /* default */comb_config,
+		   /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
+
+  opt_reg_int_list(odb, "-bpred:ddep",            /*BZ*/
+		   "data dependence predictor (<meta_table_size>)",
+		   ddep_config, ddep_nelt, &ddep_nelt,
+		   /* default */ddep_config,
 		   /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
 
   opt_reg_int(odb, "-bpred:ras",
@@ -895,83 +906,101 @@ sim_check_options(struct opt_odb_t *odb,        /* options database */
     fatal("front-end speed must be positive and non-zero");
 
   if (!mystricmp(pred_type, "perfect"))
-    {
-      /* perfect predictor */
-      pred = NULL;
-      pred_perfect = TRUE;
-    }
+  {
+    /* perfect predictor */
+    pred = NULL;
+    pred_perfect = TRUE;
+  }
   else if (!mystricmp(pred_type, "taken"))
-    {
-      /* static predictor, not taken */
-      pred = bpred_create(BPredTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-    }
+  {
+    /* static predictor, not taken */
+    pred = bpred_create(BPredTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
   else if (!mystricmp(pred_type, "nottaken"))
-    {
-      /* static predictor, taken */
-      pred = bpred_create(BPredNotTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-    }
+  {
+    /* static predictor, taken */
+    pred = bpred_create(BPredNotTaken, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
   else if (!mystricmp(pred_type, "bimod"))
-    {
-      /* bimodal predictor, bpred_create() checks BTB_SIZE */
-      if (bimod_nelt != 1)
-	fatal("bad bimod predictor config (<table_size>)");
-      if (btb_nelt != 2)
-	fatal("bad btb config (<num_sets> <associativity>)");
+  {
+    /* bimodal predictor, bpred_create() checks BTB_SIZE */
+    if (bimod_nelt != 1)
+      fatal("bad bimod predictor config (<table_size>)");
+    if (btb_nelt != 2)
+      fatal("bad btb config (<num_sets> <associativity>)");
 
-      /* bimodal predictor, bpred_create() checks BTB_SIZE */
-      pred = bpred_create(BPred2bit,
-			  /* bimod table size */bimod_config[0],
-			  /* 2lev l1 size */0,
-			  /* 2lev l2 size */0,
-			  /* meta table size */0,
-			  /* history reg size */0,
-			  /* history xor address */0,
-			  /* btb sets */btb_config[0],
-			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
-    }
+    /* bimodal predictor, bpred_create() checks BTB_SIZE */
+    pred = bpred_create(BPred2bit,
+      /* bimod table size */bimod_config[0],
+      /* 2lev l1 size */0,
+      /* 2lev l2 size */0,
+      /* meta table size */0,
+      /* history reg size */0,
+      /* history xor address */0,
+      /* btb sets */btb_config[0],
+      /* btb assoc */btb_config[1],
+      /* ret-addr stack size */ras_size);
+  }
   else if (!mystricmp(pred_type, "2lev"))
-    {
-      /* 2-level adaptive predictor, bpred_create() checks args */
-      if (twolev_nelt != 4)
-	fatal("bad 2-level pred config (<l1size> <l2size> <hist_size> <xor>)");
-      if (btb_nelt != 2)
-	fatal("bad btb config (<num_sets> <associativity>)");
+  {
+    /* 2-level adaptive predictor, bpred_create() checks args */
+    if (twolev_nelt != 4)
+      fatal("bad 2-level pred config (<l1size> <l2size> <hist_size> <xor>)");
+    if (btb_nelt != 2)
+      fatal("bad btb config (<num_sets> <associativity>)");
 
-      pred = bpred_create(BPred2Level,
-			  /* bimod table size */0,
-			  /* 2lev l1 size */twolev_config[0],
-			  /* 2lev l2 size */twolev_config[1],
-			  /* meta table size */0,
-			  /* history reg size */twolev_config[2],
-			  /* history xor address */twolev_config[3],
-			  /* btb sets */btb_config[0],
-			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
-    }
+    pred = bpred_create(BPred2Level,
+      /* bimod table size */0,
+      /* 2lev l1 size */twolev_config[0],
+      /* 2lev l2 size */twolev_config[1],
+      /* meta table size */0,
+      /* history reg size */twolev_config[2],
+      /* history xor address */twolev_config[3],
+      /* btb sets */btb_config[0],
+      /* btb assoc */btb_config[1],
+      /* ret-addr stack size */ras_size);
+  }
   else if (!mystricmp(pred_type, "comb"))
-    {
-      /* combining predictor, bpred_create() checks args */
-      if (twolev_nelt != 4)
-	fatal("bad 2-level pred config (<l1size> <l2size> <hist_size> <xor>)");
-      if (bimod_nelt != 1)
-	fatal("bad bimod predictor config (<table_size>)");
-      if (comb_nelt != 1)
-	fatal("bad combining predictor config (<meta_table_size>)");
-      if (btb_nelt != 2)
-	fatal("bad btb config (<num_sets> <associativity>)");
+  {
+    /* combining predictor, bpred_create() checks args */
+    if (twolev_nelt != 4)
+      fatal("bad 2-level pred config (<l1size> <l2size> <hist_size> <xor>)");
+    if (bimod_nelt != 1)
+      fatal("bad bimod predictor config (<table_size>)");
+    if (comb_nelt != 1)
+      fatal("bad combining predictor config (<meta_table_size>)");
+    if (btb_nelt != 2)
+      fatal("bad btb config (<num_sets> <associativity>)");
 
-      pred = bpred_create(BPredComb,
-			  /* bimod table size */bimod_config[0],
-			  /* l1 size */twolev_config[0],
-			  /* l2 size */twolev_config[1],
-			  /* meta table size */comb_config[0],
-			  /* history reg size */twolev_config[2],
-			  /* history xor address */twolev_config[3],
-			  /* btb sets */btb_config[0],
-			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
-    }
+    pred = bpred_create(BPredComb,
+      /* bimod table size */bimod_config[0],
+      /* l1 size */twolev_config[0],
+      /* l2 size */twolev_config[1],
+      /* meta table size */comb_config[0],
+      /* history reg size */twolev_config[2],
+      /* history xor address */twolev_config[3],
+      /* btb sets */btb_config[0],
+      /* btb assoc */btb_config[1],
+      /* ret-addr stack size */ras_size);
+  }
+  else if(!mystricmp(pred_type, "ddep")){         /*BZ*/
+    if (bimod_nelt != 1)
+      fatal("bad bimod predictor config (<table_size>)");
+    if (btb_nelt != 2)
+      fatal("bad btb config (<num_sets> <associativity>)");
+
+    /* static predictor, taken */
+    pred = bpred_create(BPredDD,
+      /* bimod table size */bimod_config[0],
+      /* 2lev l1 size */ddep_config[0],          // Size of ALT
+      /* 2lev l2 size */0,
+      /* meta table size */0,
+      /* history reg size */0,
+      /* history xor address */0,
+      /* btb sets */btb_config[0],
+      /* btb assoc */btb_config[1],
+      /* ret-addr stack size */ras_size);
+  }
   else
     fatal("cannot parse predictor type `%s'", pred_type);
 
@@ -1152,25 +1181,25 @@ sim_check_options(struct opt_odb_t *odb,        /* options database */
   if (res_ialu > MAX_INSTS_PER_CLASS)
     fatal("number of integer ALU's must be <= MAX_INSTS_PER_CLASS");
   fu_config[FU_IALU_INDEX].quantity = res_ialu;
-  
+
   if (res_imult < 1)
     fatal("number of integer multiplier/dividers must be greater than zero");
   if (res_imult > MAX_INSTS_PER_CLASS)
     fatal("number of integer mult/div's must be <= MAX_INSTS_PER_CLASS");
   fu_config[FU_IMULT_INDEX].quantity = res_imult;
-  
+
   if (res_memport < 1)
     fatal("number of memory system ports must be greater than zero");
   if (res_memport > MAX_INSTS_PER_CLASS)
     fatal("number of memory system ports must be <= MAX_INSTS_PER_CLASS");
   fu_config[FU_MEMPORT_INDEX].quantity = res_memport;
-  
+
   if (res_fpalu < 1)
     fatal("number of floating point ALU's must be greater than zero");
   if (res_fpalu > MAX_INSTS_PER_CLASS)
     fatal("number of floating point ALU's must be <= MAX_INSTS_PER_CLASS");
   fu_config[FU_FPALU_INDEX].quantity = res_fpalu;
-  
+
   if (res_fpmult < 1)
     fatal("number of floating point multiplier/dividers must be > zero");
   if (res_fpmult > MAX_INSTS_PER_CLASS)
@@ -2213,7 +2242,7 @@ ruu_commit(void)
 	  /* invalidate load/store operation instance */
 	  LSQ[LSQ_head].tag++;
           sim_slip += (sim_cycle - LSQ[LSQ_head].slip);
-   
+
 	  /* indicate to pipeline trace that this instruction retired */
 	  ptrace_newstage(LSQ[LSQ_head].ptrace_seq, PST_COMMIT, events);
 	  ptrace_endinst(LSQ[LSQ_head].ptrace_seq);
@@ -2319,7 +2348,7 @@ ruu_recover(int branch_index)			/* index of mis-pred branch */
 	      /* blow away the consuming op list */
 	      LSQ[LSQ_index].odep_list[i] = NULL;
 	    }
-      
+
 	  /* squash this LSQ entry */
 	  LSQ[LSQ_index].tag++;
 
@@ -2339,7 +2368,7 @@ ruu_recover(int branch_index)			/* index of mis-pred branch */
 	  /* blow away the consuming op list */
 	  RUU[RUU_index].odep_list[i] = NULL;
 	}
-      
+
       /* squash this RUU entry */
       RUU[RUU_index].tag++;
 
@@ -2773,7 +2802,7 @@ ruu_issue(void)
 			  eventq_queue_event(rs, sim_cycle + fu->oplat);
 
 			  /* entered execute stage, indicate in pipe trace */
-			  ptrace_newstage(rs->ptrace_seq, PST_EXECUTE, 
+			  ptrace_newstage(rs->ptrace_seq, PST_EXECUTE,
 					  rs->ea_comp ? PEV_AGEN : 0);
 			}
 
@@ -4060,22 +4089,31 @@ ruu_dispatch(void)
 	  /* if this is a branching instruction update BTB, i.e., only
 	     non-speculative state is committed into the BTB */
 	  if (MD_OP_FLAGS(op) & F_CTRL)
-	    {
-	      sim_num_branches++;
-	      if (pred && bpred_spec_update == spec_ID)
-		{
-		  bpred_update(pred,
-			       /* branch address */regs.regs_PC,
-			       /* actual target address */regs.regs_NPC,
-			       /* taken? */regs.regs_NPC != (regs.regs_PC +
-						       sizeof(md_inst_t)),
-			       /* pred taken? */pred_PC != (regs.regs_PC +
-							sizeof(md_inst_t)),
-			       /* correct pred? */pred_PC == regs.regs_NPC,
-			       /* opcode */op,
-			       /* predictor update ptr */&rs->dir_update);
-		}
-	    }
+    {
+      sim_num_branches++;
+      if (pred && bpred_spec_update == spec_ID)
+      {
+        if(pred->class==BPredDD){         /*BZ*/
+          bpreddd_update(pred,
+             /* register file */regs,
+             /* resolved branch target */regs.regs_NPC,
+             /* taken? */regs.regs_NPC != (regs.regs_PC + sizeof(md_inst_t)),
+             /* pred taken? */pred_PC != (regs.regs_PC + sizeof(md_inst_t)),
+             /* correct pred? */pred_PC == regs.regs_NPC,
+             /* opcode */op,
+             /* predictor update pointer */&rs->dir_update);
+        } else {
+          bpred_update(pred,
+             /* branch address */regs.regs_PC,
+             /* actual target address */regs.regs_NPC,
+             /* taken? */regs.regs_NPC != (regs.regs_PC + sizeof(md_inst_t)),
+             /* pred taken? */pred_PC != (regs.regs_PC + sizeof(md_inst_t)),
+             /* correct pred? */pred_PC == regs.regs_NPC,
+             /* opcode */op,
+             /* predictor update ptr */&rs->dir_update);
+        }
+      }
+    }
 
 	  /* is the trace generator trasitioning into mis-speculation mode? */
 	  if (pred_PC != regs.regs_NPC && !fetch_redirected)
@@ -4213,130 +4251,140 @@ ruu_fetch(void)
        /* and no IFETCH blocking condition encountered */
        && !done;
        i++)
+  {
+    /* fetch an instruction at the next predicted fetch address */
+    fetch_regs_PC = fetch_pred_PC;
+
+    /* is this a bogus text address? (can happen on mis-spec path) */
+    if (ld_text_base <= fetch_regs_PC
+      && fetch_regs_PC < (ld_text_base+ld_text_size)
+      && !(fetch_regs_PC & (sizeof(md_inst_t)-1)))
     {
-      /* fetch an instruction at the next predicted fetch address */
-      fetch_regs_PC = fetch_pred_PC;
+      /* read instruction from memory */
+      MD_FETCH_INST(inst, mem, fetch_regs_PC);
 
-      /* is this a bogus text address? (can happen on mis-spec path) */
-      if (ld_text_base <= fetch_regs_PC
-	  && fetch_regs_PC < (ld_text_base+ld_text_size)
-	  && !(fetch_regs_PC & (sizeof(md_inst_t)-1)))
-	{
-	  /* read instruction from memory */
-	  MD_FETCH_INST(inst, mem, fetch_regs_PC);
-
-	  /* address is within program text, read instruction from memory */
-	  lat = cache_il1_lat;
-	  if (cache_il1)
-	    {
-	      /* access the I-cache */
-	      lat =
-		cache_access(cache_il1, Read, IACOMPRESS(fetch_regs_PC),
-			     NULL, ISCOMPRESS(sizeof(md_inst_t)), sim_cycle,
-			     NULL, NULL);
-	      if (lat > cache_il1_lat)
-		last_inst_missed = TRUE;
+      /* address is within program text, read instruction from memory */
+      lat = cache_il1_lat;
+      if (cache_il1)
+      {
+        /* access the I-cache */
+        lat =
+          cache_access(cache_il1, Read, IACOMPRESS(fetch_regs_PC),
+          NULL, ISCOMPRESS(sizeof(md_inst_t)), sim_cycle,
+          NULL, NULL);
+        if (lat > cache_il1_lat)
+          last_inst_missed = TRUE;
 	    }
 
-	  if (itlb)
+      if (itlb)
 	    {
 	      /* access the I-TLB, NOTE: this code will initiate
-		 speculative TLB misses */
+        speculative TLB misses */
 	      tlb_lat =
-		cache_access(itlb, Read, IACOMPRESS(fetch_regs_PC),
-			     NULL, ISCOMPRESS(sizeof(md_inst_t)), sim_cycle,
-			     NULL, NULL);
+          cache_access(itlb, Read, IACOMPRESS(fetch_regs_PC),
+          NULL, ISCOMPRESS(sizeof(md_inst_t)), sim_cycle,
+			    NULL, NULL);
 	      if (tlb_lat > 1)
-		last_inst_tmissed = TRUE;
+          last_inst_tmissed = TRUE;
 
 	      /* I-cache/I-TLB accesses occur in parallel */
 	      lat = MAX(tlb_lat, lat);
 	    }
 
-	  /* I-cache/I-TLB miss? assumes I-cache hit >= I-TLB hit */
-	  if (lat != cache_il1_lat)
-	    {
+      /* I-cache/I-TLB miss? assumes I-cache hit >= I-TLB hit */
+      if (lat != cache_il1_lat)
+      {
 	      /* I-cache miss, block fetch until it is resolved */
 	      ruu_fetch_issue_delay += lat - 1;
 	      break;
 	    }
-	  /* else, I-cache/I-TLB hit */
-	}
+      /* else, I-cache/I-TLB hit */
+    }
+    else
+    {
+      /* fetch PC is bogus, send a NOP down the pipeline */
+      inst = MD_NOP_INST;
+    }
+
+    /* have a valid inst, here */
+
+    /* possibly use the BTB target */
+    if (pred)
+    {
+      enum md_opcode op;
+
+      /* pre-decode instruction, used for bpred stats recording */
+      MD_SET_OPCODE(op, inst);
+
+      /* get the next predicted fetch address; only use branch predictor
+         result for branches (assumes pre-decode bits); NOTE: returned
+         value may be 1 if bpred can only predict a direction */
+      if (MD_OP_FLAGS(op) & F_CTRL)
+        if(pred->class == BPredDD){
+          fetch_pred_PC = bpreddd_lookup(pred,
+             /* register file */regs,
+             /* target */0,
+             /* inst opcode */op,
+             /* call? */MD_IS_CALL(op),
+             /* return? */MD_IS_RETURN(op),
+             /* stash an update ptr */&(fetch_data[fetch_tail].dir_update),
+             /* stash return stack ptr */&stack_recover_idx);
+        } else {
+          fetch_pred_PC = bpred_lookup(pred,
+             /* branch address */fetch_regs_PC,
+             /* target address *//* FIXME: not computed */0,
+             /* opcode */op,
+             /* call? */MD_IS_CALL(op),
+             /* return? */MD_IS_RETURN(op),
+             /* updt */&(fetch_data[fetch_tail].dir_update),
+             /* RSB index */&stack_recover_idx);
+        }
       else
-	{
-	  /* fetch PC is bogus, send a NOP down the pipeline */
-	  inst = MD_NOP_INST;
-	}
+        fetch_pred_PC = 0;
 
-      /* have a valid inst, here */
-
-      /* possibly use the BTB target */
-      if (pred)
-	{
-	  enum md_opcode op;
-
-	  /* pre-decode instruction, used for bpred stats recording */
-	  MD_SET_OPCODE(op, inst);
-	  
-	  /* get the next predicted fetch address; only use branch predictor
-	     result for branches (assumes pre-decode bits); NOTE: returned
-	     value may be 1 if bpred can only predict a direction */
-	  if (MD_OP_FLAGS(op) & F_CTRL)
-	    fetch_pred_PC =
-	      bpred_lookup(pred,
-			   /* branch address */fetch_regs_PC,
-			   /* target address *//* FIXME: not computed */0,
-			   /* opcode */op,
-			   /* call? */MD_IS_CALL(op),
-			   /* return? */MD_IS_RETURN(op),
-			   /* updt */&(fetch_data[fetch_tail].dir_update),
-			   /* RSB index */&stack_recover_idx);
-	  else
-	    fetch_pred_PC = 0;
-
-	  /* valid address returned from branch predictor? */
-	  if (!fetch_pred_PC)
+      /* valid address returned from branch predictor? */
+      if (!fetch_pred_PC)
 	    {
 	      /* no predicted taken target, attempt not taken target */
 	      fetch_pred_PC = fetch_regs_PC + sizeof(md_inst_t);
 	    }
-	  else
+      else
 	    {
 	      /* go with target, NOTE: discontinuous fetch, so terminate */
 	      branch_cnt++;
 	      if (branch_cnt >= fetch_speed)
-		done = TRUE;
+          done = TRUE;
 	    }
-	}
-      else
-	{
-	  /* no predictor, just default to predict not taken, and
-	     continue fetching instructions linearly */
-	  fetch_pred_PC = fetch_regs_PC + sizeof(md_inst_t);
-	}
-
-      /* commit this instruction to the IFETCH -> DISPATCH queue */
-      fetch_data[fetch_tail].IR = inst;
-      fetch_data[fetch_tail].regs_PC = fetch_regs_PC;
-      fetch_data[fetch_tail].pred_PC = fetch_pred_PC;
-      fetch_data[fetch_tail].stack_recover_idx = stack_recover_idx;
-      fetch_data[fetch_tail].ptrace_seq = ptrace_seq++;
-
-      /* for pipe trace */
-      ptrace_newinst(fetch_data[fetch_tail].ptrace_seq,
-		     inst, fetch_data[fetch_tail].regs_PC,
-		     0);
-      ptrace_newstage(fetch_data[fetch_tail].ptrace_seq,
-		      PST_IFETCH,
-		      ((last_inst_missed ? PEV_CACHEMISS : 0)
-		       | (last_inst_tmissed ? PEV_TLBMISS : 0)));
-      last_inst_missed = FALSE;
-      last_inst_tmissed = FALSE;
-
-      /* adjust instruction fetch queue */
-      fetch_tail = (fetch_tail + 1) & (ruu_ifq_size - 1);
-      fetch_num++;
     }
+    else
+    {
+      /* no predictor, just default to predict not taken, and
+         continue fetching instructions linearly */
+      fetch_pred_PC = fetch_regs_PC + sizeof(md_inst_t);
+    }
+
+    /* commit this instruction to the IFETCH -> DISPATCH queue */
+    fetch_data[fetch_tail].IR = inst;
+    fetch_data[fetch_tail].regs_PC = fetch_regs_PC;
+    fetch_data[fetch_tail].pred_PC = fetch_pred_PC;
+    fetch_data[fetch_tail].stack_recover_idx = stack_recover_idx;
+    fetch_data[fetch_tail].ptrace_seq = ptrace_seq++;
+
+    /* for pipe trace */
+    ptrace_newinst(fetch_data[fetch_tail].ptrace_seq,
+       inst, fetch_data[fetch_tail].regs_PC,
+       0);
+    ptrace_newstage(fetch_data[fetch_tail].ptrace_seq,
+        PST_IFETCH,
+        ((last_inst_missed ? PEV_CACHEMISS : 0)
+         | (last_inst_tmissed ? PEV_TLBMISS : 0)));
+    last_inst_missed = FALSE;
+    last_inst_tmissed = FALSE;
+
+    /* adjust instruction fetch queue */
+    fetch_tail = (fetch_tail + 1) & (ruu_ifq_size - 1);
+    fetch_num++;
+  }
 }
 
 /* default machine state accessor, used by DLite */
