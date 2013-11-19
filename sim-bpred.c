@@ -93,10 +93,12 @@ static int twolev_config[4] =
   { /* l1size */1, /* l2size */1024, /* hist */8, /* xor */FALSE};
 
 /*BZ* Static config for data dependent predictor */
-static int ddep_config[1] =
-  { /* l1size */20  };
-/* combining predictor config (<meta_table_size> */
+static int ddep_nelt = 2;
+static int ddep_config[2] =
+  { /* alt size */ 20 , /* shadow mask */0x000C0000 };
 
+
+/* combining predictor config (<meta_table_size> */
 static int comb_nelt = 1;
 static int comb_config[1] =
   { /* meta_table_size */1024 };
@@ -149,7 +151,7 @@ sim_reg_options(struct opt_odb_t *odb)
 	       /* print */TRUE, /* format */NULL);
 
   opt_reg_string(odb, "-bpred",
-		 "branch predictor type {nottaken|taken|bimod|2lev|comb}",
+		 "branch predictor type {nottaken|taken|bimod|2lev|comb|ddep}",
                  &pred_type, /* default */"bimod",
                  /* print */TRUE, /* format */NULL);
 
@@ -158,6 +160,12 @@ sim_reg_options(struct opt_odb_t *odb)
 		   bimod_config, bimod_nelt, &bimod_nelt,
 		   /* default */bimod_config,
 		   /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
+
+  opt_reg_int_list(odb, "-bpred:ddep",
+           "data dependent predictor config (<alt size>,<mask>)",
+           ddep_config, ddep_nelt, &ddep_nelt,
+           /* default */ddep_config,
+           /* print */TRUE, /*format*/ NULL, /* !accrue */ FALSE);
 
   opt_reg_int_list(odb, "-bpred:2lev",
                    "2-level predictor config "
@@ -266,11 +274,10 @@ sim_check_options(struct opt_odb_t *odb, int argc, char **argv)
     if (btb_nelt != 2)
       fatal("bad btb config (<num_sets> <associativity>)");
 
-    /* static predictor, taken */
     pred = bpred_create(BPredDD,
       /* bimod table size */bimod_config[0],
-      /* 2lev l1 size */ddep_config[0],          // Size of ALT
-      /* 2lev l2 size */0,
+      /* alt t1 size */ddep_config[0],
+      /* shadow mask */ddep_config[1],
       /* meta table size */0,
       /* history reg size */0,
       /* history xor address */0,

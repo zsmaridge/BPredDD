@@ -116,9 +116,8 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
       bpred_dir_create(BPred2bit, bimod_size, 0, 0, 0);
 
     /* datadependent component */
-    /* TODO Match this with dir_creat */
     pred->dirpred.ddep =
-      bpred_dir_create(BPredDD, l1size, 0, 0, 0);
+      bpred_dir_create(BPredDD, l1size, l2size, 0, 0);
     break;
 
   case BPredTaken:
@@ -272,13 +271,13 @@ bpred_dir_create (
   case BPredDD:           /*BZ*/
     /* TODO: Error Checking */
 
-    /* TODO: Setup Source-Target Register */
+    /* Setup Source-Target Register */
     pred_dir->config.ddep.l1size = l1size;
+    pred_dir->config.ddep.shadow_mask = l2size;
     pred_dir->config.ddep.source = 0;
-    pred_dir->config.ddep.l1count = 0;
     pred_dir->config.ddep.target = -1; /* setting all bits to 1 */
 
-    /* TODO: Allocate space for ALT */
+    /* Allocate space for ALT */
     /* 32 shadow registers */
     /* n entries in alt */
     if (!(pred_dir->config.ddep.table = calloc(l1size, sizeof(struct alt_t))))
@@ -926,7 +925,7 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
         if((1<<iReg) == ((1<<iReg)&(pred->dirpred.ddep->config.ddep.table[cnt].depend)))
         {
           if(pred->dirpred.ddep->config.ddep.table[cnt].shadowregs[iReg]!=
-             (regs.regs_R[iReg] & SHADOW_MASK))
+             (regs.regs_R[iReg] & pred->dirpred.ddep->config.ddep.shadow_mask))
           {
                bMiss++;
           }
@@ -1305,7 +1304,8 @@ bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
   {
     if((1<<iReg) == ((1<<iReg)&(depend)))
     {
-      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=(regs.regs_R[iReg] & SHADOW_MASK);
+      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg] =
+        (regs.regs_R[iReg] & pred->dirpred.ddep->config.ddep.shadow_mask);
     }
     else
     {

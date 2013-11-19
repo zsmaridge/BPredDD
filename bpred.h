@@ -149,11 +149,11 @@ struct bpred_dir_t {
     } two;
     struct {          /*BZ*/
       int l1size;
-      int l1count;
       long int source;
       long int target;
       struct alt_t *table;
       int *num_table;
+      int shadow_mask;
     } ddep;
   } config;
 };
