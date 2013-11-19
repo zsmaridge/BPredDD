@@ -2252,20 +2252,27 @@ ruu_commit(void)
 	  LSQ_num--;
 	}
 
-      if (pred
-	  && bpred_spec_update == spec_CT
-	  && (MD_OP_FLAGS(rs->op) & F_CTRL))
+  if (pred && bpred_spec_update == spec_CT && (MD_OP_FLAGS(rs->op) & F_CTRL))
 	{
-	  bpred_update(pred,
+    if(pred->class==BPredDD){             /*BZ*/
+        bpreddd_update(pred,
+           /* register file */regs,
+           /* resolved branch target */rs->next_PC,
+           /* taken? */rs->next_PC != (rs->PC + sizeof(md_inst_t)),
+           /* pred taken? */rs->pred_PC != (rs->PC + sizeof(md_inst_t)),
+           /* correct pred? */rs->pred_PC == rs->next_PC,
+           /* opcode */rs->op,
+           /* dir predictor update pointer */&rs->dir_update);
+    } else {
+      bpred_update(pred,
 		       /* branch address */rs->PC,
 		       /* actual target address */rs->next_PC,
-                       /* taken? */rs->next_PC != (rs->PC +
-                                                   sizeof(md_inst_t)),
-                       /* pred taken? */rs->pred_PC != (rs->PC +
-                                                        sizeof(md_inst_t)),
-                       /* correct pred? */rs->pred_PC == rs->next_PC,
-                       /* opcode */rs->op,
-                       /* dir predictor update pointer */&rs->dir_update);
+           /* taken? */rs->next_PC != (rs->PC + sizeof(md_inst_t)),
+           /* pred taken? */rs->pred_PC != (rs->PC + sizeof(md_inst_t)),
+           /* correct pred? */rs->pred_PC == rs->next_PC,
+           /* opcode */rs->op,
+           /* dir predictor update pointer */&rs->dir_update);
+    }
 	}
 
       /* invalidate RUU operation instance */
@@ -2440,21 +2447,28 @@ ruu_writeback(void)
 	}
 
       /* if we speculatively update branch-predictor, do it here */
-      if (pred
-	  && bpred_spec_update == spec_WB
-	  && !rs->in_LSQ
-	  && (MD_OP_FLAGS(rs->op) & F_CTRL))
+  if (pred && bpred_spec_update == spec_WB && !rs->in_LSQ
+          && (MD_OP_FLAGS(rs->op) & F_CTRL))
 	{
-	  bpred_update(pred,
-		       /* branch address */rs->PC,
+    if(pred->class==BPredDD){         /*BZ*/
+      bpreddd_update(pred,
+         /* register file */regs,
 		       /* actual target address */rs->next_PC,
-		       /* taken? */rs->next_PC != (rs->PC +
-						   sizeof(md_inst_t)),
-		       /* pred taken? */rs->pred_PC != (rs->PC +
-							sizeof(md_inst_t)),
+		       /* taken? */rs->next_PC != (rs->PC + sizeof(md_inst_t)),
+		       /* pred taken? */rs->pred_PC != (rs->PC + sizeof(md_inst_t)),
 		       /* correct pred? */rs->pred_PC == rs->next_PC,
 		       /* opcode */rs->op,
 		       /* dir predictor update pointer */&rs->dir_update);
+    } else {
+      bpred_update(pred,
+		       /* branch address */rs->PC,
+		       /* actual target address */rs->next_PC,
+		       /* taken? */rs->next_PC != (rs->PC + sizeof(md_inst_t)),
+		       /* pred taken? */rs->pred_PC != (rs->PC + sizeof(md_inst_t)),
+		       /* correct pred? */rs->pred_PC == rs->next_PC,
+		       /* opcode */rs->op,
+		       /* dir predictor update pointer */&rs->dir_update);
+    }
 	}
 
       /* entered writeback stage, indicate in pipe trace */
@@ -4090,6 +4104,9 @@ ruu_dispatch(void)
 	     non-speculative state is committed into the BTB */
 	  if (MD_OP_FLAGS(op) & F_CTRL)
     {
+      /*BZ* Update STR table */
+      //if(pred->class==BPredDD) bpreddd_str_update(pred, inst);
+
       sim_num_branches++;
       if (pred && bpred_spec_update == spec_ID)
       {
@@ -4117,12 +4134,12 @@ ruu_dispatch(void)
 
 	  /* is the trace generator trasitioning into mis-speculation mode? */
 	  if (pred_PC != regs.regs_NPC && !fetch_redirected)
-	    {
-	      /* entering mis-speculation mode, indicate this and save PC */
-	      spec_mode = TRUE;
-	      rs->recover_inst = TRUE;
-	      recover_PC = regs.regs_NPC;
-	    }
+    {
+      /* entering mis-speculation mode, indicate this and save PC */
+      spec_mode = TRUE;
+      rs->recover_inst = TRUE;
+      recover_PC = regs.regs_NPC;
+    }
 	}
 
       /* entered decode/allocate stage, indicate in pipe trace */
@@ -4320,7 +4337,7 @@ ruu_fetch(void)
          result for branches (assumes pre-decode bits); NOTE: returned
          value may be 1 if bpred can only predict a direction */
       if (MD_OP_FLAGS(op) & F_CTRL)
-        if(pred->class == BPredDD){
+        if(pred->class == BPredDD){               /*BZ*/
           fetch_pred_PC = bpreddd_lookup(pred,
              /* register file */regs,
              /* target */0,
@@ -4489,45 +4506,48 @@ sim_main(void)
   /* fast forward simulator loop, performs functional simulation for
      FASTFWD_COUNT insts, then turns on performance (timing) simulation */
   if (fastfwd_count > 0)
-    {
-      int icount;
-      md_inst_t inst;			/* actual instruction bits */
-      enum md_opcode op;		/* decoded opcode enum */
-      md_addr_t target_PC;		/* actual next/target PC address */
-      md_addr_t addr;			/* effective address, if load/store */
-      int is_write;			/* store? */
-      byte_t temp_byte = 0;		/* temp variable for spec mem access */
-      half_t temp_half = 0;		/* " ditto " */
-      word_t temp_word = 0;		/* " ditto " */
+  {
+    int icount;
+    md_inst_t inst;			/* actual instruction bits */
+    enum md_opcode op;		/* decoded opcode enum */
+    md_addr_t target_PC;		/* actual next/target PC address */
+    md_addr_t addr;			/* effective address, if load/store */
+    int is_write;			/* store? */
+    byte_t temp_byte = 0;		/* temp variable for spec mem access */
+    half_t temp_half = 0;		/* " ditto " */
+    word_t temp_word = 0;		/* " ditto " */
 #ifdef HOST_HAS_QWORD
-      qword_t temp_qword = 0;		/* " ditto " */
+    qword_t temp_qword = 0;		/* " ditto " */
 #endif /* HOST_HAS_QWORD */
-      enum md_fault_type fault;
+    enum md_fault_type fault;
 
-      fprintf(stderr, "sim: ** fast forwarding %d insts **\n", fastfwd_count);
+    fprintf(stderr, "sim: ** fast forwarding %d insts **\n", fastfwd_count);
 
-      for (icount=0; icount < fastfwd_count; icount++)
-	{
-	  /* maintain $r0 semantics */
-	  regs.regs_R[MD_REG_ZERO] = 0;
-#ifdef TARGET_ALPHA
-	  regs.regs_F.d[MD_REG_ZERO] = 0.0;
-#endif /* TARGET_ALPHA */
+    for (icount=0; icount < fastfwd_count; icount++)
+    {
+      /* maintain $r0 semantics */
+      regs.regs_R[MD_REG_ZERO] = 0;
+  #ifdef TARGET_ALPHA
+      regs.regs_F.d[MD_REG_ZERO] = 0.0;
+  #endif /* TARGET_ALPHA */
 
-	  /* get the next instruction to execute */
-	  MD_FETCH_INST(inst, mem, regs.regs_PC);
+      /* get the next instruction to execute */
+      MD_FETCH_INST(inst, mem, regs.regs_PC);
 
-	  /* set default reference address */
-	  addr = 0; is_write = FALSE;
+      /* set default reference address */
+      addr = 0; is_write = FALSE;
 
-	  /* set default fault - none */
-	  fault = md_fault_none;
+      /* set default fault - none */
+      fault = md_fault_none;
 
-	  /* decode the instruction */
-	  MD_SET_OPCODE(op, inst);
+      /* decode the instruction */
+      MD_SET_OPCODE(op, inst);
 
-	  /* execute the instruction */
-	  switch (op)
+      /*BZ* Update STR table */
+      if(pred->class==BPredDD) bpreddd_str_update(pred, inst);
+
+      /* execute the instruction */
+      switch (op)
 	    {
 #define DEFINST(OP,MSK,NAME,OPFORM,RES,FLAGS,O1,O2,I1,I2,I3)		\
 	    case OP:							\
@@ -4545,27 +4565,27 @@ sim_main(void)
 	      panic("attempted to execute a bogus opcode");
 	    }
 
-	  if (fault != md_fault_none)
-	    fatal("fault (%d) detected @ 0x%08p", fault, regs.regs_PC);
+      if (fault != md_fault_none)
+        fatal("fault (%d) detected @ 0x%08p", fault, regs.regs_PC);
 
-	  /* update memory access stats */
-	  if (MD_OP_FLAGS(op) & F_MEM)
-	    {
-	      if (MD_OP_FLAGS(op) & F_STORE)
-		is_write = TRUE;
-	    }
+      /* update memory access stats */
+      if (MD_OP_FLAGS(op) & F_MEM)
+      {
+        if (MD_OP_FLAGS(op) & F_STORE)
+          is_write = TRUE;
+      }
 
-	  /* check for DLite debugger entry condition */
-	  if (dlite_check_break(regs.regs_NPC,
-				is_write ? ACCESS_WRITE : ACCESS_READ,
-				addr, sim_num_insn, sim_num_insn))
-	    dlite_main(regs.regs_PC, regs.regs_NPC, sim_num_insn, &regs, mem);
+      /* check for DLite debugger entry condition */
+      if (dlite_check_break(regs.regs_NPC,
+          is_write ? ACCESS_WRITE : ACCESS_READ,
+          addr, sim_num_insn, sim_num_insn))
+        dlite_main(regs.regs_PC, regs.regs_NPC, sim_num_insn, &regs, mem);
 
-	  /* go to the next instruction */
-	  regs.regs_PC = regs.regs_NPC;
-	  regs.regs_NPC += sizeof(md_inst_t);
-	}
+      /* go to the next instruction */
+      regs.regs_PC = regs.regs_NPC;
+      regs.regs_NPC += sizeof(md_inst_t);
     }
+  }
 
   fprintf(stderr, "sim: ** starting performance simulation **\n");
 
@@ -4577,78 +4597,78 @@ sim_main(void)
   /* main simulator loop, NOTE: the pipe stages are traverse in reverse order
      to eliminate this/next state synchronization and relaxation problems */
   for (;;)
+  {
+    /* RUU/LSQ sanity checks */
+    if (RUU_num < LSQ_num)
+      panic("RUU_num < LSQ_num");
+    if (((RUU_head + RUU_num) % RUU_size) != RUU_tail)
+      panic("RUU_head/RUU_tail wedged");
+    if (((LSQ_head + LSQ_num) % LSQ_size) != LSQ_tail)
+      panic("LSQ_head/LSQ_tail wedged");
+
+    /* check if pipetracing is still active */
+    ptrace_check_active(regs.regs_PC, sim_num_insn, sim_cycle);
+
+    /* indicate new cycle in pipetrace */
+    ptrace_newcycle(sim_cycle);
+
+    /* commit entries from RUU/LSQ to architected register file */
+    ruu_commit();
+
+    /* service function unit release events */
+    ruu_release_fu();
+
+    /* ==> may have ready queue entries carried over from previous cycles */
+
+    /* service result completions, also readies dependent operations */
+    /* ==> inserts operations into ready queue --> register deps resolved */
+    ruu_writeback();
+
+    if (!bugcompat_mode)
     {
-      /* RUU/LSQ sanity checks */
-      if (RUU_num < LSQ_num)
-	panic("RUU_num < LSQ_num");
-      if (((RUU_head + RUU_num) % RUU_size) != RUU_tail)
-	panic("RUU_head/RUU_tail wedged");
-      if (((LSQ_head + LSQ_num) % LSQ_size) != LSQ_tail)
-	panic("LSQ_head/LSQ_tail wedged");
+      /* try to locate memory operations that are ready to execute */
+      /* ==> inserts operations into ready queue --> mem deps resolved */
+      lsq_refresh();
 
-      /* check if pipetracing is still active */
-      ptrace_check_active(regs.regs_PC, sim_num_insn, sim_cycle);
-
-      /* indicate new cycle in pipetrace */
-      ptrace_newcycle(sim_cycle);
-
-      /* commit entries from RUU/LSQ to architected register file */
-      ruu_commit();
-
-      /* service function unit release events */
-      ruu_release_fu();
-
-      /* ==> may have ready queue entries carried over from previous cycles */
-
-      /* service result completions, also readies dependent operations */
-      /* ==> inserts operations into ready queue --> register deps resolved */
-      ruu_writeback();
-
-      if (!bugcompat_mode)
-	{
-	  /* try to locate memory operations that are ready to execute */
-	  /* ==> inserts operations into ready queue --> mem deps resolved */
-	  lsq_refresh();
-
-	  /* issue operations ready to execute from a previous cycle */
-	  /* <== drains ready queue <-- ready operations commence execution */
-	  ruu_issue();
-	}
-
-      /* decode and dispatch new operations */
-      /* ==> insert ops w/ no deps or all regs ready --> reg deps resolved */
-      ruu_dispatch();
-
-      if (bugcompat_mode)
-	{
-	  /* try to locate memory operations that are ready to execute */
-	  /* ==> inserts operations into ready queue --> mem deps resolved */
-	  lsq_refresh();
-
-	  /* issue operations ready to execute from a previous cycle */
-	  /* <== drains ready queue <-- ready operations commence execution */
-	  ruu_issue();
-	}
-
-      /* call instruction fetch unit if it is not blocked */
-      if (!ruu_fetch_issue_delay)
-	ruu_fetch();
-      else
-	ruu_fetch_issue_delay--;
-
-      /* update buffer occupancy stats */
-      IFQ_count += fetch_num;
-      IFQ_fcount += ((fetch_num == ruu_ifq_size) ? 1 : 0);
-      RUU_count += RUU_num;
-      RUU_fcount += ((RUU_num == RUU_size) ? 1 : 0);
-      LSQ_count += LSQ_num;
-      LSQ_fcount += ((LSQ_num == LSQ_size) ? 1 : 0);
-
-      /* go to next cycle */
-      sim_cycle++;
-
-      /* finish early? */
-      if (max_insts && sim_num_insn >= max_insts)
-	return;
+      /* issue operations ready to execute from a previous cycle */
+      /* <== drains ready queue <-- ready operations commence execution */
+      ruu_issue();
     }
+
+    /* decode and dispatch new operations */
+    /* ==> insert ops w/ no deps or all regs ready --> reg deps resolved */
+    ruu_dispatch();                                         /*BZ* Calls bpred_update */
+
+    if (bugcompat_mode)
+    {
+      /* try to locate memory operations that are ready to execute */
+      /* ==> inserts operations into ready queue --> mem deps resolved */
+      lsq_refresh();
+
+      /* issue operations ready to execute from a previous cycle */
+      /* <== drains ready queue <-- ready operations commence execution */
+      ruu_issue();
+    }
+
+    /* call instruction fetch unit if it is not blocked */
+    if (!ruu_fetch_issue_delay)
+      ruu_fetch();                                            /*BZ* Calls bpred_lookup */
+    else
+      ruu_fetch_issue_delay--;
+
+    /* update buffer occupancy stats */
+    IFQ_count += fetch_num;
+    IFQ_fcount += ((fetch_num == ruu_ifq_size) ? 1 : 0);
+    RUU_count += RUU_num;
+    RUU_fcount += ((RUU_num == RUU_size) ? 1 : 0);
+    LSQ_count += LSQ_num;
+    LSQ_fcount += ((LSQ_num == LSQ_size) ? 1 : 0);
+
+    /* go to next cycle */
+    sim_cycle++;
+
+    /* finish early? */
+    if (max_insts && sim_num_insn >= max_insts)
+      return;
+  }
 }
