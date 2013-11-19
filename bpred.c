@@ -659,12 +659,12 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
     }
       break;
     case BPred2bit:
+    case BPredDD:
       p = &pred_dir->config.bimod.table[BIMOD_HASH(pred_dir, baddr)];
       break;
     case BPredTaken:
     case BPredNotTaken:
     case BPredJunk:
-    case BPredDD:
       break;
 
     default:
@@ -871,14 +871,6 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
   dir_update_ptr->pdir2 = NULL;
   dir_update_ptr->pmeta = NULL;
 
-  /* if this is not a branch, return not-taken */
-  if (!(MD_OP_FLAGS(op) & F_CTRL)){
-    pred->last_used = BPredJunk;    /*BZ*/
-    return 0;
-  }
-
-  pred->lookups++;
-
   /* record pre-pop TOS; if this branch is executed speculatively
    * and is squashed, we'll restore the TOS and hope the data
    * wasn't corrupted in the meantime. */
@@ -911,6 +903,14 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
   }
 #endif /* !RAS_BUG_COMPATIBLE */
 
+  /* if this is not a branch, return not-taken */
+  if (!(MD_OP_FLAGS(op) & F_CTRL)){
+    pred->last_used = BPredJunk;    /*BZ*/
+    return 0;
+  }
+
+  pred->lookups++;
+
   for(cnt=0;(cnt < pred->dirpred.ddep->config.ddep.l1size) && (bMatch==0);cnt++)
   {
     if((baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch) &&
@@ -920,7 +920,7 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
     {
       bMatch = 1;
       iHitIndex = cnt;
-      for(iReg=0; (iReg<32)/* && (bMiss==0)*/; iReg++)
+      for(iReg=0; (iReg<32) && (bMiss==0); iReg++)
       {
         if((1<<iReg) == ((1<<iReg)&(pred->dirpred.ddep->config.ddep.table[cnt].depend)))
         {
@@ -938,7 +938,7 @@ bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
     pred->ddep_matches++;
   }
 
-  if((bMatch==1) && (bMiss<1))
+  if((bMatch==1) && (bMiss<0) && !(is_return && pred->retstack.size))
   {
     pred->used_ddep++;
     pred->last_used = BPredDD;

@@ -2264,8 +2264,8 @@ ruu_commit(void)
            /* dir predictor update pointer */&rs->dir_update);
     } else {
       bpred_update(pred,
-		       /* branch address */rs->PC,
-		       /* actual target address */rs->next_PC,
+		   /* branch address */rs->PC,
+		   /* actual target address */rs->next_PC,
            /* taken? */rs->next_PC != (rs->PC + sizeof(md_inst_t)),
            /* pred taken? */rs->pred_PC != (rs->PC + sizeof(md_inst_t)),
            /* correct pred? */rs->pred_PC == rs->next_PC,
@@ -3797,6 +3797,9 @@ ruu_dispatch(void)
       /* decode the inst */
       MD_SET_OPCODE(op, inst);
 
+      /*BZ* Update STR table */
+      if(pred->class==BPredDD) bpreddd_str_update(pred, inst);
+
       /* compute default next PC */
       regs.regs_NPC = regs.regs_PC + sizeof(md_inst_t);
 
@@ -4103,9 +4106,6 @@ ruu_dispatch(void)
 	     non-speculative state is committed into the BTB */
 	  if (MD_OP_FLAGS(op) & F_CTRL)
     {
-      /*BZ* Update STR table */
-      //if(pred->class==BPredDD) bpreddd_str_update(pred, inst);
-
       sim_num_branches++;
       if (pred && bpred_spec_update == spec_ID)
       {
@@ -4331,6 +4331,9 @@ ruu_fetch(void)
 
       /* pre-decode instruction, used for bpred stats recording */
       MD_SET_OPCODE(op, inst);
+
+      /*BZ* Update STR table */
+      if(pred->class==BPredDD) bpreddd_str_update(pred, inst);
 
       /* get the next predicted fetch address; only use branch predictor
          result for branches (assumes pre-decode bits); NOTE: returned
