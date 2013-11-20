@@ -95,7 +95,7 @@ static int twolev_config[4] =
 /*BZ* Static config for data dependent predictor */
 static int ddep_nelt = 2;
 static int ddep_config[2] =
-  { /* alt size */ 20 , /* shadow mask */0x000C0000 };
+  { /* alt size */ 50 , /* shadow mask */0x00C00000 };
 
 
 /* combining predictor config (<meta_table_size> */
@@ -511,31 +511,6 @@ sim_main(void)
 
       /*BZ* Update STR table */
       if(pred->class==BPredDD) bpreddd_str_update(pred, inst);
-
-      /****ZS**** Test code */
-      //fprintf(stderr, "\n\nTest Print\n\n");
-      /*j++;
-      if(MD_OP_FLAGS(op) & F_FCOMP){ fl++; }
-      else{  nfl++;  }
-      if(j == 5000){
-        printf("Total FP: %d\n", fl);
-        printf("Total nonFP: %d\n", nfl);
-      }
-
-      if(MD_OP_FLAGS(op) & F_COND){ //saveSTR(); resetSTR();
-      }
-      else if(!(MD_OP_FLAGS(op) & F_LOAD)){
-        printf("\nSources:%d(%#x) %d(%#x) %d\n",(int)RA,GPR(RA), (int)RB, GPR(RB), (int)RC);
-        //printf("Instruction: %#x\n", inst);
-        STR[0][(int)RA] = 1; STR[0][(int)RB] = 1; STR[0][(int)RC] = 1;
-        //STR[1][O1] = 0; STR[1][O2] = 0;
-      }
-      printf("Branch: %s\n", op);
-      printf("STR: S\tT\n");
-      for(i=0; i<64; i++)
-      {
-        printf("\t%d\t%d\n", STR[0][i], STR[1][i]);
-      }*/
 
       /* execute the instruction */
       switch (op)

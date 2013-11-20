@@ -654,8 +654,6 @@ bpreddd_dir_lookup(struct bpred_t *pred,	/* branch dir predictor inst */
 
   if((bMatch==1) && (bMiss<1))
   {
-    pred->used_ddep++;
-    pred->last_used = BPredDD;
     p =  &pred->dirpred.ddep->config.ddep.table[iHitIndex].dir;
   }
   return (char *) p;
@@ -791,10 +789,18 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
       {
         dir_update_ptr->pdir1 =
           bpreddd_dir_lookup (pred, regs, baddr);
-        if(dir_update_ptr->pdir1==NULL)
+
+        if(dir_update_ptr->pdir1==NULL)     // Use 2-bit
         {
           dir_update_ptr->pdir1 =
             bpred_dir_lookup (pred->dirpred.bimod, baddr);
+          pred->used_bimod++;
+          pred->last_used = BPred2bit;
+        }
+        else                                // Use ddep
+        {
+          pred->used_ddep++;
+          pred->last_used = BPredDD;
         }
       }
       break;
@@ -958,24 +964,19 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 
   if (correct){
     pred->addr_hits++;
-    /*if(pred->last_used == BPredDD){
-      pred->ddep_hits++;
-    }
-    else{
-      pred->bimod_hits++;
-    }*/
   }
 
   if (!!pred_taken == !!taken){ //retarded boolean typecast
     pred->dir_hits++;
-    //if((MD_OP_FLAGS(op) & (F_CTRL|F_COND)) == (F_CTRL|F_COND)){   /*BZ*/
-    if(pred->class == BPredDD){
+
+    if(pred->class == BPredDD){           /*BZ*/
       if(pred->last_used == BPredDD){
         pred->ddep_hits++;
       }
-      else if(pred->last_used == BPred2bit){
+      if(pred->last_used == BPred2bit){
         pred->bimod_hits++;
       }
+      pred->last_used = BPredJunk;
     }
   }
   else{
@@ -993,15 +994,6 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   }
   else if ((MD_OP_FLAGS(op) & (F_CTRL|F_COND)) == (F_CTRL|F_COND))
   {
-    /*if(pred->class == BPredDD){
-      if(pred->last_used == BPredDD){
-        pred->used_ddep++;
-      }
-      else if(pred->last_used == BPred2bit){
-        pred->used_bimod++;
-      }
-    }
-    else*/
     if (dir_update_ptr->dir.meta)
       pred->used_2lev++;
     else if(pred->class != BPredDD)

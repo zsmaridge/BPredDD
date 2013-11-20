@@ -126,7 +126,7 @@ static int twolev_config[4] =
 /*BZ* Static config for data dependent predictor */
 static int ddep_nelt = 2;
 static int ddep_config[2] =
-  { /* alt size */ 20 , /* shadow mask */0x000C0000 };
+  { /* alt size */ 50 , /* shadow mask */0x00C00000 };
 
 /* combining predictor config (<meta_table_size> */
 static int comb_nelt = 1;
