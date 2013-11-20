@@ -574,27 +574,16 @@ sim_main(void)
 
 	  if (pred)
     {
-      /* check class of bpred, use different bred_lookup */
-      if(pred->class == BPredDD){
-        pred_PC = bpreddd_lookup(pred,
-             /* register file */regs,
-             /* target */target_PC,
-             /* inst opcode */op,
-             /* call? */MD_IS_CALL(op),
-             /* return? */MD_IS_RETURN(op),
-             /* stash an update ptr */&update_rec,
-             /* stash return stack ptr */&stack_idx);
-      } else {
-        /* get the next predicted fetch address */
-        pred_PC = bpred_lookup(pred,
-             /* branch addr */regs.regs_PC,
-             /* target */target_PC,
-             /* inst opcode */op,
-             /* call? */MD_IS_CALL(op),
-             /* return? */MD_IS_RETURN(op),
-             /* stash an update ptr */&update_rec,
-             /* stash return stack ptr */&stack_idx);
-      }
+    /* get the next predicted fetch address */
+    pred_PC = bpred_lookup(pred,
+         /* register file */regs,
+         /* branch addr */regs.regs_PC,
+         /* target */target_PC,
+         /* inst opcode */op,
+         /* call? */MD_IS_CALL(op),
+         /* return? */MD_IS_RETURN(op),
+         /* stash an update ptr */&update_rec,
+         /* stash return stack ptr */&stack_idx);
 
       /* valid address returned from branch predictor? */
       if (!pred_PC)
@@ -603,30 +592,17 @@ sim_main(void)
         pred_PC = regs.regs_PC + sizeof(md_inst_t);
       }
 
-      if(pred->class==BPredDD){
-        bpreddd_update(pred,
-         /* register file */regs,
-         /* resolved branch target */regs.regs_NPC,
-         /* taken? */regs.regs_NPC != (regs.regs_PC +
-               sizeof(md_inst_t)),
-         /* pred taken? */pred_PC != (regs.regs_PC +
-              sizeof(md_inst_t)),
-         /* correct pred? */pred_PC == regs.regs_NPC,
-         /* opcode */op,
-         /* predictor update pointer */&update_rec);
-      } else {
-        bpred_update(pred,
-         /* branch addr */regs.regs_PC,
-         /* resolved branch target */regs.regs_NPC,
-         /* taken? */regs.regs_NPC != (regs.regs_PC +
-               sizeof(md_inst_t)),
-         /* pred taken? */pred_PC != (regs.regs_PC +
-              sizeof(md_inst_t)),
-         /* correct pred? */pred_PC == regs.regs_NPC,
-         /* opcode */op,
-         /* predictor update pointer */&update_rec);
-
-      }
+      bpred_update(pred,
+       /* register file */regs,
+       /* branch addr */regs.regs_PC,
+       /* resolved branch target */regs.regs_NPC,
+       /* taken? */regs.regs_NPC != (regs.regs_PC +
+             sizeof(md_inst_t)),
+       /* pred taken? */pred_PC != (regs.regs_PC +
+            sizeof(md_inst_t)),
+       /* correct pred? */pred_PC == regs.regs_NPC,
+       /* opcode */op,
+       /* predictor update pointer */&update_rec);
     }
 	}
 

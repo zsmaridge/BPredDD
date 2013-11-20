@@ -2253,25 +2253,15 @@ ruu_commit(void)
 
   if (pred && bpred_spec_update == spec_CT && (MD_OP_FLAGS(rs->op) & F_CTRL))
 	{
-    if(pred->class==BPredDD){             /*BZ*/
-        bpreddd_update(pred,
-           /* register file */regs,
-           /* resolved branch target */rs->next_PC,
-           /* taken? */rs->next_PC != (rs->PC + sizeof(md_inst_t)),
-           /* pred taken? */rs->pred_PC != (rs->PC + sizeof(md_inst_t)),
-           /* correct pred? */rs->pred_PC == rs->next_PC,
-           /* opcode */rs->op,
-           /* dir predictor update pointer */&rs->dir_update);
-    } else {
       bpred_update(pred,
-		   /* branch address */rs->PC,
-		   /* actual target address */rs->next_PC,
+           /* register file */regs,
+		       /* branch address */rs->PC,
+           /* actual target address */rs->next_PC,
            /* taken? */rs->next_PC != (rs->PC + sizeof(md_inst_t)),
            /* pred taken? */rs->pred_PC != (rs->PC + sizeof(md_inst_t)),
            /* correct pred? */rs->pred_PC == rs->next_PC,
            /* opcode */rs->op,
            /* dir predictor update pointer */&rs->dir_update);
-    }
 	}
 
       /* invalidate RUU operation instance */
@@ -2449,17 +2439,8 @@ ruu_writeback(void)
   if (pred && bpred_spec_update == spec_WB && !rs->in_LSQ
           && (MD_OP_FLAGS(rs->op) & F_CTRL))
 	{
-    if(pred->class==BPredDD){         /*BZ*/
-      bpreddd_update(pred,
-         /* register file */regs,
-		       /* actual target address */rs->next_PC,
-		       /* taken? */rs->next_PC != (rs->PC + sizeof(md_inst_t)),
-		       /* pred taken? */rs->pred_PC != (rs->PC + sizeof(md_inst_t)),
-		       /* correct pred? */rs->pred_PC == rs->next_PC,
-		       /* opcode */rs->op,
-		       /* dir predictor update pointer */&rs->dir_update);
-    } else {
       bpred_update(pred,
+           /* register file */regs,
 		       /* branch address */rs->PC,
 		       /* actual target address */rs->next_PC,
 		       /* taken? */rs->next_PC != (rs->PC + sizeof(md_inst_t)),
@@ -2467,7 +2448,6 @@ ruu_writeback(void)
 		       /* correct pred? */rs->pred_PC == rs->next_PC,
 		       /* opcode */rs->op,
 		       /* dir predictor update pointer */&rs->dir_update);
-    }
 	}
 
       /* entered writeback stage, indicate in pipe trace */
@@ -4109,17 +4089,8 @@ ruu_dispatch(void)
       sim_num_branches++;
       if (pred && bpred_spec_update == spec_ID)
       {
-        if(pred->class==BPredDD){         /*BZ*/
-          bpreddd_update(pred,
-             /* register file */regs,
-             /* resolved branch target */regs.regs_NPC,
-             /* taken? */regs.regs_NPC != (regs.regs_PC + sizeof(md_inst_t)),
-             /* pred taken? */pred_PC != (regs.regs_PC + sizeof(md_inst_t)),
-             /* correct pred? */pred_PC == regs.regs_NPC,
-             /* opcode */op,
-             /* predictor update pointer */&rs->dir_update);
-        } else {
           bpred_update(pred,
+             /* register file */regs,
              /* branch address */regs.regs_PC,
              /* actual target address */regs.regs_NPC,
              /* taken? */regs.regs_NPC != (regs.regs_PC + sizeof(md_inst_t)),
@@ -4127,7 +4098,6 @@ ruu_dispatch(void)
              /* correct pred? */pred_PC == regs.regs_NPC,
              /* opcode */op,
              /* predictor update ptr */&rs->dir_update);
-        }
       }
     }
 
@@ -4339,17 +4309,9 @@ ruu_fetch(void)
          result for branches (assumes pre-decode bits); NOTE: returned
          value may be 1 if bpred can only predict a direction */
       if (MD_OP_FLAGS(op) & F_CTRL)
-        if(pred->class == BPredDD){               /*BZ*/
-          fetch_pred_PC = bpreddd_lookup(pred,
-             /* register file */regs,
-             /* target */0,
-             /* inst opcode */op,
-             /* call? */MD_IS_CALL(op),
-             /* return? */MD_IS_RETURN(op),
-             /* stash an update ptr */&(fetch_data[fetch_tail].dir_update),
-             /* stash return stack ptr */&stack_recover_idx);
-        } else {
+      {
           fetch_pred_PC = bpred_lookup(pred,
+             /* register file */regs,
              /* branch address */fetch_regs_PC,
              /* target address *//* FIXME: not computed */0,
              /* opcode */op,

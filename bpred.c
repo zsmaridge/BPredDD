@@ -450,33 +450,6 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
   sprintf(buf, "%s.updates", name);
   sprintf(buf1, "%s.dir_hits + %s.misses", name, name);
   stat_reg_formula(sdb, buf, "total number of updates", buf1, "%12.0f");
-
-  sprintf(buf, "%s.addr_hits", name);
-  stat_reg_counter(sdb, buf, "total number of address-predicted hits",
-		   &pred->addr_hits, 0, NULL);
-
-  sprintf(buf, "%s.dir_hits", name);
-  stat_reg_counter(sdb, buf,
-		   "total number of direction-predicted hits "
-		   "(includes addr-hits)",
-		   &pred->dir_hits, 0, NULL);
-  if (pred->class == BPredComb)
-  {
-    sprintf(buf, "%s.used_bimod", name);
-    stat_reg_counter(sdb, buf,
-         "total number of bimodal predictions used",
-         &pred->used_bimod, 0, NULL);
-
-    sprintf(buf, "%s.used_2lev", name);
-    stat_reg_counter(sdb, buf,
-         "total number of 2-level predictions used",
-         &pred->used_2lev, 0, NULL);
-  }
-  if (pred->class == BPredJunk)
-  {
-      sprintf(buf, "Junk Test Success");
-      stat_reg_counter(sdb, buf, "nothing really", &pred->misses, 0, NULL);
-  }
   if (pred->class == BPredDD)
   {
       sprintf(buf, "\n###BZ###\n%s.ddep_matches", name);
@@ -516,6 +489,32 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
       stat_reg_formula(sdb, buf,
         "data dependent prediction utilization (i.e., used_ddep/(used_ddep+used_bimod))\n###BZ###\n",
         buf1, "%9.4f");
+  }
+  sprintf(buf, "%s.addr_hits", name);
+  stat_reg_counter(sdb, buf, "total number of address-predicted hits",
+		   &pred->addr_hits, 0, NULL);
+
+  sprintf(buf, "%s.dir_hits", name);
+  stat_reg_counter(sdb, buf,
+		   "total number of direction-predicted hits "
+		   "(includes addr-hits)",
+		   &pred->dir_hits, 0, NULL);
+  if (pred->class == BPredComb)
+  {
+    sprintf(buf, "%s.used_bimod", name);
+    stat_reg_counter(sdb, buf,
+         "total number of bimodal predictions used",
+         &pred->used_bimod, 0, NULL);
+
+    sprintf(buf, "%s.used_2lev", name);
+    stat_reg_counter(sdb, buf,
+         "total number of 2-level predictions used",
+         &pred->used_2lev, 0, NULL);
+  }
+  if (pred->class == BPredJunk)
+  {
+      sprintf(buf, "Junk Test Success");
+      stat_reg_counter(sdb, buf, "nothing really", &pred->misses, 0, NULL);
   }
   sprintf(buf, "%s.misses", name);
   stat_reg_counter(sdb, buf, "total number of misses", &pred->misses, 0, NULL);
@@ -615,13 +614,60 @@ bpred_after_priming(struct bpred_t *bpred)
   ((((ADDR) >> 19) ^ ((ADDR) >> MD_BR_SHIFT)) & ((PRED)->config.bimod.size-1))
     /* was: ((baddr >> 16) ^ baddr) & (pred->dirpred.bimod.size-1) */
 
+/*BZ*/
+char *				/* predicted branch target addr */
+bpreddd_dir_lookup(struct bpred_t *pred,	/* branch dir predictor inst */
+		 	     struct regs_t regs,
+		 	     md_addr_t baddr)		/* register file */
+{
+  unsigned char *p = NULL;
+  int cnt, iReg;
+  int bMatch = 0;
+  int bMiss = 0;
+  int iHitIndex;
+  for(cnt=0;(cnt < pred->dirpred.ddep->config.ddep.l1size) && (bMatch==0);cnt++)
+  {
+    if((baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch) &&
+       ((pred->dirpred.ddep->config.ddep.source &
+        pred->dirpred.ddep->config.ddep.target) ==
+        (pred->dirpred.ddep->config.ddep.table[cnt].depend)))
+    {
+      bMatch = 1;
+      iHitIndex = cnt;
+      for(iReg=0; (iReg<32) && (bMiss==0); iReg++)
+      {
+        if((1<<iReg) == ((1<<iReg)&(pred->dirpred.ddep->config.ddep.table[cnt].depend)))
+        {
+          if(pred->dirpred.ddep->config.ddep.table[cnt].shadowregs[iReg]!=
+             (regs.regs_R[iReg] & pred->dirpred.ddep->config.ddep.shadow_mask))
+          {
+               bMiss++;
+          }
+        }
+      }
+    }
+  }
+
+  if(bMatch==1){
+    pred->ddep_matches++;
+  }
+
+  if((bMatch==1) && (bMiss<1))
+  {
+    pred->used_ddep++;
+    pred->last_used = BPredDD;
+    p =  &pred->dirpred.ddep->config.ddep.table[iHitIndex].dir;
+  }
+  return (char *) p;
+}
+
+
 /* predicts a branch direction */
 char *						/* pointer to counter */
 bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
 		 md_addr_t baddr)		/* branch address */
 {
   unsigned char *p = NULL;
-
   /* Except for jumps, get a pointer to direction-prediction bits */
   switch (pred_dir->class) {
     case BPred2Level:
@@ -683,6 +729,7 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
    (used for recovering ret-addr stack after mis-predict).  */
 md_addr_t				/* predicted branch target addr */
 bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
+	     struct regs_t regs,		/* register file */
 	     md_addr_t baddr,		/* branch address */
 	     md_addr_t btarget,		/* branch target if taken */
 	     enum md_opcode op,		/* opcode of instruction */
@@ -739,8 +786,19 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
           bpred_dir_lookup (pred->dirpred.twolev, baddr);
       }
       break;
-    case BPred2bit:
     case BPredDD:
+      if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
+      {
+        dir_update_ptr->pdir1 =
+          bpreddd_dir_lookup (pred, regs, baddr);
+        if(dir_update_ptr->pdir1==NULL)
+        {
+          dir_update_ptr->pdir1 =
+            bpred_dir_lookup (pred->dirpred.bimod, baddr);
+        }
+      }
+      break;
+    case BPred2bit:
       if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
       {
         dir_update_ptr->pdir1 =
@@ -849,112 +907,6 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
     }
 }
 
-/*BZ*/
-md_addr_t				/* predicted branch target addr */
-bpreddd_lookup(struct bpred_t *pred,	/* branch predictor instance */
-	     struct regs_t regs,		/* register file */
-	     md_addr_t btarget,		/* branch target if taken */
-	     enum md_opcode op,		/* opcode of instruction */
-	     int is_call,		/* non-zero if inst is fn call */
-	     int is_return,		/* non-zero if inst is fn return */
-	     struct bpred_update_t *dir_update_ptr, /* pred state pointer */
-	     int *stack_recover_idx)	/* Non-speculative top-of-stack; */
-{
-  int cnt, iReg;
-  int bMatch = 0;
-  int bMiss = 0;
-  int iHitIndex;
-  md_addr_t baddr = regs.regs_PC;
-
-  dir_update_ptr->dir.ras = FALSE;
-  dir_update_ptr->pdir1 = NULL;
-  dir_update_ptr->pdir2 = NULL;
-  dir_update_ptr->pmeta = NULL;
-
-  /* record pre-pop TOS; if this branch is executed speculatively
-   * and is squashed, we'll restore the TOS and hope the data
-   * wasn't corrupted in the meantime. */
-  if (pred->retstack.size)
-    *stack_recover_idx = pred->retstack.tos;
-  else
-    *stack_recover_idx = 0;
-
-  /* if this is a return, pop return-address stack */
-  if (is_return && pred->retstack.size)
-  {
-    md_addr_t target = pred->retstack.stack[pred->retstack.tos].target;
-    pred->retstack.tos = (pred->retstack.tos + pred->retstack.size - 1)
-                   % pred->retstack.size;
-    pred->retstack_pops++;
-    dir_update_ptr->dir.ras = TRUE; /* using RAS here */
-
-    pred->last_used = BPredJunk;    /*BZ*/
-    return target;
-  }
-
-#ifndef RAS_BUG_COMPATIBLE
-  /* if function call, push return-address onto return-address stack */
-  if (is_call && pred->retstack.size)
-  {
-    pred->retstack.tos = (pred->retstack.tos + 1)% pred->retstack.size;
-    pred->retstack.stack[pred->retstack.tos].target =
-      baddr + sizeof(md_inst_t);
-    pred->retstack_pushes++;
-  }
-#endif /* !RAS_BUG_COMPATIBLE */
-
-  /* if this is not a branch, return not-taken */
-  if (!(MD_OP_FLAGS(op) & F_CTRL)){
-    pred->last_used = BPredJunk;    /*BZ*/
-    return 0;
-  }
-
-  pred->lookups++;
-
-  for(cnt=0;(cnt < pred->dirpred.ddep->config.ddep.l1size) && (bMatch==0);cnt++)
-  {
-    if((baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch) &&
-       ((pred->dirpred.ddep->config.ddep.source &
-        pred->dirpred.ddep->config.ddep.target) ==
-        (pred->dirpred.ddep->config.ddep.table[cnt].depend)))
-    {
-      bMatch = 1;
-      iHitIndex = cnt;
-      for(iReg=0; (iReg<32) && (bMiss==0); iReg++)
-      {
-        if((1<<iReg) == ((1<<iReg)&(pred->dirpred.ddep->config.ddep.table[cnt].depend)))
-        {
-          if(pred->dirpred.ddep->config.ddep.table[cnt].shadowregs[iReg]!=
-             (regs.regs_R[iReg] & pred->dirpred.ddep->config.ddep.shadow_mask))
-          {
-               bMiss++;
-          }
-        }
-      }
-    }
-  }
-
-  if(bMatch==1){
-    pred->ddep_matches++;
-  }
-
-  if((bMatch==1) && (bMiss<0) && !(is_return && pred->retstack.size))
-  {
-    pred->used_ddep++;
-    pred->last_used = BPredDD;
-    return pred->dirpred.ddep->config.ddep.table[iHitIndex].target;
-  }
-  else    //use 2 bit
-  {
-    pred->lookups--;
-    pred->used_bimod++;
-    pred->last_used = BPred2bit;
-    return bpred_lookup(pred, baddr, btarget, op, is_call, is_return,
-      dir_update_ptr, stack_recover_idx);
-
-  }
-}
-
 /* Speculative execution can corrupt the ret-addr stack.  So for each
  * lookup we return the top-of-stack (TOS) at that point; a mispredicted
  * branch, as part of its recovery, restores the TOS using this value --
@@ -981,6 +933,7 @@ bpred_recover(struct bpred_t *pred,	/* branch predictor instance */
    bpred_update is done speculatively, branch-prediction may get polluted. */
 void
 bpred_update(struct bpred_t *pred,	/* branch predictor instance */
+       struct regs_t regs,
 	     md_addr_t baddr,		/* branch address */
 	     md_addr_t btarget,		/* resolved branch target */
 	     int taken,			/* non-zero if branch was taken */
@@ -992,6 +945,9 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   struct bpred_btb_ent_t *pbtb = NULL;
   struct bpred_btb_ent_t *lruhead = NULL, *lruitem = NULL;
   int index, i;
+  int cnt, iReg;
+  int iEntry;
+  long int depend;
 
   /* don't change bpred state for non-branch instructions or if this
    * is a stateless predictor*/
@@ -1010,7 +966,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
     }*/
   }
 
-  if (!!pred_taken == !!taken){
+  if (!!pred_taken == !!taken){ //retarded boolean typecast
     pred->dir_hits++;
     //if((MD_OP_FLAGS(op) & (F_CTRL|F_COND)) == (F_CTRL|F_COND)){   /*BZ*/
     if(pred->class == BPredDD){
@@ -1238,6 +1194,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
     /* update current information */
     dassert(taken);
 
+
     if (pbtb->addr == baddr)
     {
       if (!correct)
@@ -1251,76 +1208,52 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
       pbtb->target = btarget;
     }
   }
-}
 
-void
-bpreddd_update(struct bpred_t *pred,	/* branch predictor instance */
-	     struct regs_t regs,		/* branch address */
-	     md_addr_t btarget,		/* resolved branch target */
-	     int taken,			/* non-zero if branch was taken */
-	     int pred_taken,		/* non-zero if branch was pred taken */
-	     int correct,		/* was earlier addr prediction ok? */
-	     enum md_opcode op,		/* opcode of instruction */
-	     struct bpred_update_t *dir_update_ptr)/* pred state pointer */
-{
-  int cnt, iReg;
-  int iEntry = rand() % pred->dirpred.ddep->config.ddep.l1size;
 
-  long int depend = (pred->dirpred.ddep->config.ddep.source &
-    pred->dirpred.ddep->config.ddep.target);
-
-  /* Update counters */
-  md_addr_t baddr = regs.regs_PC;
-  bpred_update(pred, baddr, btarget,
-               taken, pred_taken,	correct,
-               op, dir_update_ptr);
-
-  /*BZ* Update data dependency predictor */
-  // Check if branch is in table
-  // pred->dirpred.twolev->config.two.l1size
-  //  &pred->btb.btb_data[index];
-  for(cnt=0;cnt < pred->dirpred.ddep->config.ddep.l1size;cnt++)
+  if(pred->class==BPredDD)
   {
-    if((baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch) &&
-       ((pred->dirpred.ddep->config.ddep.source &
-        pred->dirpred.ddep->config.ddep.target) ==
-        pred->dirpred.ddep->config.ddep.table[cnt].depend))
+    iEntry = rand() % pred->dirpred.ddep->config.ddep.l1size;
+    depend = (pred->dirpred.ddep->config.ddep.source &
+              pred->dirpred.ddep->config.ddep.target);
+
+    /*BZ* Update data dependency predictor */
+    // Check if branch is in table
+    for(cnt=0;cnt < pred->dirpred.ddep->config.ddep.l1size;cnt++)
     {
-      //Found
-      pred->dirpred.ddep->config.ddep.source = 0;
-      pred->dirpred.ddep->config.ddep.target = -1;
-      return;
+      if((baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch) &&
+         ((pred->dirpred.ddep->config.ddep.source &
+          pred->dirpred.ddep->config.ddep.target) ==
+          pred->dirpred.ddep->config.ddep.table[cnt].depend))
+      {
+        //Found
+        pred->dirpred.ddep->config.ddep.source = 0;
+        pred->dirpred.ddep->config.ddep.target = -1;
+        return;
+      }
     }
+    //Not Found
+    pred->dirpred.ddep->config.ddep.table[iEntry].branch = baddr;
+    pred->dirpred.ddep->config.ddep.table[iEntry].depend = depend;
+
+    //Store target address
+    pred->dirpred.ddep->config.ddep.table[iEntry].dir = (taken ? 3 : 0);
+
+    //Store shadow registers
+    for(iReg=0; iReg<32; iReg++)
+    {
+      if((1<<iReg) == ((1<<iReg)&(depend)))
+      {
+        pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg] =
+          (regs.regs_R[iReg] & pred->dirpred.ddep->config.ddep.shadow_mask);
+      }
+      else
+      {
+        pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=0;
+      }
+    }
+    pred->dirpred.ddep->config.ddep.source = 0;
+    pred->dirpred.ddep->config.ddep.target = -1;
   }
-  //Not Found
-  pred->dirpred.ddep->config.ddep.table[iEntry].branch = baddr;
-  pred->dirpred.ddep->config.ddep.table[iEntry].depend = depend;
-
-  //Store target address
-  pred->dirpred.ddep->config.ddep.table[iEntry].target = (taken ? btarget : 0);
-
-  //Store shadow registers
-  for(iReg=0; iReg<32; iReg++)
-  {
-    if((1<<iReg) == ((1<<iReg)&(depend)))
-    {
-      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg] =
-        (regs.regs_R[iReg] & pred->dirpred.ddep->config.ddep.shadow_mask);
-    }
-    else
-    {
-      pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=0;
-    }
-  }
-
-  /*pred->dirpred.ddep->config.ddep.l1count++;
-  if(++iEntry==pred->dirpred.ddep->config.ddep.l1size){
-    pred->dirpred.ddep->config.ddep.l1count = 0;
-  }*/
-
-  pred->dirpred.ddep->config.ddep.source = 0;
-  pred->dirpred.ddep->config.ddep.target = -1;
-
 }
 
 /*BZ*/
