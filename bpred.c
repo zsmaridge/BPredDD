@@ -269,8 +269,6 @@ bpred_dir_create (
 
     break;
   case BPredDD:           /*BZ*/
-    /* TODO: Error Checking */
-
     /* Setup Source-Target Register */
     pred_dir->config.ddep.l1size = l1size;
     pred_dir->config.ddep.shadow_mask = l2size;
@@ -279,7 +277,6 @@ bpred_dir_create (
 
     /* Allocate space for ALT */
     /* 32 shadow registers */
-    /* n entries in alt */
     if (!(pred_dir->config.ddep.table = calloc(l1size, sizeof(struct alt_t))))
       fatal("cannot allocate address lookup table\n");
 
@@ -289,9 +286,6 @@ bpred_dir_create (
       calloc(32, sizeof(unsigned int))))
         fatal("cannot allocate shadow register file\n");
     }
-
-    if(!(pred_dir->config.ddep.num_table = calloc(l1size, sizeof(unsigned int))))
-      fatal("cannot allocate lru table for address lookup table");
 
     break;
   case BPredTaken:
@@ -372,7 +366,6 @@ bpred_config(struct bpred_t *pred,	/* branch predictor instance */
   case BPredDD:           /*BZ*/
     bpred_dir_config (pred->dirpred.bimod, "bimod", stream);
     bpred_dir_config (pred->dirpred.ddep, "ddep", stream);
-    /* TODO: print other stats */
     break;
 
   case BPred2bit:
@@ -485,7 +478,7 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
         buf1, "%9.4f");
 
       sprintf(buf, "%s.ddep utlization rate", name);
-      sprintf(buf1, "%s.used_ddep / %s.used_bimod", name, name);
+      sprintf(buf1, "%s.used_ddep / ( %s.used_bimod + %s.used_ddep )", name, name, name);
       stat_reg_formula(sdb, buf,
         "data dependent prediction utilization (i.e., used_ddep/(used_ddep+used_bimod))\n###BZ###\n",
         buf1, "%9.4f");
@@ -625,8 +618,10 @@ bpreddd_dir_lookup(struct bpred_t *pred,	/* branch dir predictor inst */
   int bMatch = 0;
   int bMiss = 0;
   int iHitIndex;
+  /* search alt */
   for(cnt=0;(cnt < pred->dirpred.ddep->config.ddep.l1size) && (bMatch==0);cnt++)
   {
+    /* find a branch and dependence match */
     if((baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch) &&
        ((pred->dirpred.ddep->config.ddep.source &
         pred->dirpred.ddep->config.ddep.target) ==
@@ -634,6 +629,7 @@ bpreddd_dir_lookup(struct bpred_t *pred,	/* branch dir predictor inst */
     {
       bMatch = 1;
       iHitIndex = cnt;
+      /* compare data registers */
       for(iReg=0; (iReg<32) && (bMiss==0); iReg++)
       {
         if((1<<iReg) == ((1<<iReg)&(pred->dirpred.ddep->config.ddep.table[cnt].depend)))
@@ -642,7 +638,7 @@ bpreddd_dir_lookup(struct bpred_t *pred,	/* branch dir predictor inst */
              (regs.regs_R[iReg] & pred->dirpred.ddep->config.ddep.shadow_mask))
           {
                bMiss++;
-          }
+          } /* else we have a hit */
         }
       }
     }
@@ -654,6 +650,7 @@ bpreddd_dir_lookup(struct bpred_t *pred,	/* branch dir predictor inst */
 
   if((bMatch==1) && (bMiss<1))
   {
+    /* return branch direction */
     p =  &pred->dirpred.ddep->config.ddep.table[iHitIndex].dir;
   }
   return (char *) p;
@@ -788,16 +785,16 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
       if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
       {
         dir_update_ptr->pdir1 =
-          bpreddd_dir_lookup (pred, regs, baddr);
+          bpreddd_dir_lookup (pred, regs, baddr); // Search ALT
 
-        if(dir_update_ptr->pdir1==NULL)     // Use 2-bit
+        if(dir_update_ptr->pdir1==NULL)     // Miss, default to 2-bit
         {
           dir_update_ptr->pdir1 =
             bpred_dir_lookup (pred->dirpred.bimod, baddr);
           pred->used_bimod++;
           pred->last_used = BPred2bit;
         }
-        else                                // Use ddep
+        else                                // Hit
         {
           pred->used_ddep++;
           pred->last_used = BPredDD;
@@ -1201,7 +1198,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
     }
   }
 
-
+  /* BZ */
   if(pred->class==BPredDD)
   {
     iEntry = rand() % pred->dirpred.ddep->config.ddep.l1size;
@@ -1209,7 +1206,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
               pred->dirpred.ddep->config.ddep.target);
 
     /*BZ* Update data dependency predictor */
-    // Check if branch is in table
+    /* Check if branch is in table */
     for(cnt=0;cnt < pred->dirpred.ddep->config.ddep.l1size;cnt++)
     {
       if((baddr==pred->dirpred.ddep->config.ddep.table[cnt].branch) &&
@@ -1243,6 +1240,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
         pred->dirpred.ddep->config.ddep.table[iEntry].shadowregs[iReg]=0;
       }
     }
+    /* Reset source and target registers */
     pred->dirpred.ddep->config.ddep.source = 0;
     pred->dirpred.ddep->config.ddep.target = -1;
   }
@@ -1262,9 +1260,14 @@ bpreddd_str_update(struct bpred_t *pred, word_t inst)
   regA = RA;
   regB = RB;
   regC = RC;
-
-  /* everything else */
-  if((MD_OP_FLAGS(op) & F_ICOMP) | (MD_OP_FLAGS(op) & F_RR))
+  /* clear on load */
+  if(MD_OP_FLAGS(op) & F_LOAD)
+  {
+    pred->dirpred.ddep->config.ddep.source = 0;
+    pred->dirpred.ddep->config.ddep.target = -1;
+  }
+  /* else update dependencies */
+  else if((MD_OP_FLAGS(op) & F_ICOMP) | (MD_OP_FLAGS(op) & F_RR))
   {
     pred->dirpred.ddep->config.ddep.source |= ((1 << regA) | (1 << regB));
     pred->dirpred.ddep->config.ddep.target &= (~(1 << regC));

@@ -125,9 +125,9 @@ struct bpred_btb_ent_t {
 
 /*BZ* Address lookup table */
 struct alt_t {
-  unsigned char *dir; /* direction */
-  md_addr_t branch; /* branch address */
-  long int depend; /* data dependence */
+  unsigned char *dir;       /* direction */
+  md_addr_t branch;         /* branch address */
+  long int depend;          /* data dependence */
   unsigned int *shadowregs; /* shadow registers */
 };
 
@@ -140,20 +140,19 @@ struct bpred_dir_t {
       unsigned char *table;	/* prediction state table */
     } bimod;
     struct {
-      int l1size;		/* level-1 size, number of history regs */
-      int l2size;		/* level-2 size, number of pred states */
+      int l1size;		    /* level-1 size, number of history regs */
+      int l2size;		    /* level-2 size, number of pred states */
       int shift_width;		/* amount of history in level-1 shift regs */
-      int xor;			/* history xor address flag */
+      int xor;			    /* history xor address flag */
       int *shiftregs;		/* level-1 history table */
       unsigned char *l2table;	/* level-2 prediction state table */
     } two;
     struct {          /*BZ*/
-      int l1size;
-      long int source;
-      long int target;
-      struct alt_t *table;
-      int *num_table;
-      int shadow_mask;
+      int l1size;           /* address lookup table size */
+      long int source;      /* source register */
+      long int target;      /* target register */
+      struct alt_t *table;  /* address lookup table */ 
+      int shadow_mask;      /* shadow mask */
     } ddep;
   } config;
 };
